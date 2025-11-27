@@ -14,7 +14,198 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      case_citations: {
+        Row: {
+          citation_text: string | null
+          cited_case_id: string | null
+          citing_case_id: string | null
+          created_at: string
+          id: string
+        }
+        Insert: {
+          citation_text?: string | null
+          cited_case_id?: string | null
+          citing_case_id?: string | null
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          citation_text?: string | null
+          cited_case_id?: string | null
+          citing_case_id?: string | null
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_citations_cited_case_id_fkey"
+            columns: ["cited_case_id"]
+            isOneToOne: false
+            referencedRelation: "legal_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_citations_citing_case_id_fkey"
+            columns: ["citing_case_id"]
+            isOneToOne: false
+            referencedRelation: "legal_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      case_contradictions: {
+        Row: {
+          case_a_id: string | null
+          case_b_id: string | null
+          confidence_score: number | null
+          conflict_type: string
+          created_at: string
+          description: string | null
+          id: string
+        }
+        Insert: {
+          case_a_id?: string | null
+          case_b_id?: string | null
+          confidence_score?: number | null
+          conflict_type: string
+          created_at?: string
+          description?: string | null
+          id?: string
+        }
+        Update: {
+          case_a_id?: string | null
+          case_b_id?: string | null
+          confidence_score?: number | null
+          conflict_type?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_contradictions_case_a_id_fkey"
+            columns: ["case_a_id"]
+            isOneToOne: false
+            referencedRelation: "legal_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_contradictions_case_b_id_fkey"
+            columns: ["case_b_id"]
+            isOneToOne: false
+            referencedRelation: "legal_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      case_similarities: {
+        Row: {
+          case_a_id: string | null
+          case_b_id: string | null
+          created_at: string
+          id: string
+          similarity_score: number
+        }
+        Insert: {
+          case_a_id?: string | null
+          case_b_id?: string | null
+          created_at?: string
+          id?: string
+          similarity_score: number
+        }
+        Update: {
+          case_a_id?: string | null
+          case_b_id?: string | null
+          created_at?: string
+          id?: string
+          similarity_score?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_similarities_case_a_id_fkey"
+            columns: ["case_a_id"]
+            isOneToOne: false
+            referencedRelation: "legal_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_similarities_case_b_id_fkey"
+            columns: ["case_b_id"]
+            isOneToOne: false
+            referencedRelation: "legal_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      legal_cases: {
+        Row: {
+          case_id: string
+          case_opinions: Json | null
+          citations: Json | null
+          court: string
+          created_at: string
+          decision_date: string | null
+          docket_number: string | null
+          embeddings: string | null
+          frontend_url: string | null
+          full_text: string | null
+          headnotes: string | null
+          id: string
+          jurisdiction: string | null
+          metadata: Json | null
+          name: string
+          name_abbreviation: string | null
+          preview: string[] | null
+          summary: string | null
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          case_id: string
+          case_opinions?: Json | null
+          citations?: Json | null
+          court: string
+          created_at?: string
+          decision_date?: string | null
+          docket_number?: string | null
+          embeddings?: string | null
+          frontend_url?: string | null
+          full_text?: string | null
+          headnotes?: string | null
+          id?: string
+          jurisdiction?: string | null
+          metadata?: Json | null
+          name: string
+          name_abbreviation?: string | null
+          preview?: string[] | null
+          summary?: string | null
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          case_id?: string
+          case_opinions?: Json | null
+          citations?: Json | null
+          court?: string
+          created_at?: string
+          decision_date?: string | null
+          docket_number?: string | null
+          embeddings?: string | null
+          frontend_url?: string | null
+          full_text?: string | null
+          headnotes?: string | null
+          id?: string
+          jurisdiction?: string | null
+          metadata?: Json | null
+          name?: string
+          name_abbreviation?: string | null
+          preview?: string[] | null
+          summary?: string | null
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

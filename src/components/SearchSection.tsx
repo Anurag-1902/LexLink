@@ -5,10 +5,9 @@ import { Input } from "./ui/input";
 
 interface SearchSectionProps {
   onSearch: (query: string) => void;
-  error?: string;
 }
 
-export const SearchSection = ({ onSearch, error }: SearchSectionProps) => {
+export const SearchSection = ({ onSearch }: SearchSectionProps) => {
   const [query, setQuery] = useState("Smith v. Jones");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -38,9 +37,6 @@ export const SearchSection = ({ onSearch, error }: SearchSectionProps) => {
             Search
           </Button>
         </form>
-        {error && (
-          <p className="text-navy-foreground/70 text-sm mt-4">{error}</p>
-        )}
       </div>
     </section>
   );

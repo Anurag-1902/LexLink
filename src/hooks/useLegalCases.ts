@@ -45,13 +45,13 @@ export const useImportCases = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ jurisdiction = "us", limit = 100, offset = 0 }: { 
-      jurisdiction?: string; 
+    mutationFn: async ({ court = "", limit = 20, page = 1 }: { 
+      court?: string; 
       limit?: number;
-      offset?: number;
+      page?: number;
     }) => {
       const { data, error } = await supabase.functions.invoke("import-cases", {
-        body: { jurisdiction, limit, offset },
+        body: { court, limit, page },
       });
 
       if (error) throw error;

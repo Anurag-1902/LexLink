@@ -7,31 +7,32 @@ import { useImportCases } from "@/hooks/useLegalCases";
 import { Download, Loader2 } from "lucide-react";
 
 export const CaseImport = () => {
-  const [jurisdiction, setJurisdiction] = useState("us");
-  const [limit, setLimit] = useState(100);
+  const [court, setCourt] = useState("");
+  const [limit, setLimit] = useState(20);
   const importCases = useImportCases();
 
   const handleImport = () => {
-    importCases.mutate({ jurisdiction, limit, offset: 0 });
+    importCases.mutate({ court, limit, page: 1 });
   };
 
   return (
     <Card className="p-6 border-l-4 border-l-accent">
       <div className="flex items-center gap-3 mb-4">
         <Download className="w-5 h-5 text-accent" />
-        <h3 className="text-lg font-semibold text-primary">Import Legal Cases</h3>
+        <h3 className="text-lg font-semibold text-primary">Import from CourtListener</h3>
       </div>
       
       <div className="space-y-4">
         <div>
-          <Label htmlFor="jurisdiction">Jurisdiction</Label>
+          <Label htmlFor="court">Court (optional)</Label>
           <Input
-            id="jurisdiction"
-            value={jurisdiction}
-            onChange={(e) => setJurisdiction(e.target.value)}
-            placeholder="us, cal, ny, etc."
+            id="court"
+            value={court}
+            onChange={(e) => setCourt(e.target.value)}
+            placeholder="scotus, ca9, nysd, etc."
             className="mt-1"
           />
+          <p className="text-xs text-muted-foreground mt-1">Leave empty for all courts</p>
         </div>
         
         <div>
@@ -42,7 +43,7 @@ export const CaseImport = () => {
             value={limit}
             onChange={(e) => setLimit(parseInt(e.target.value))}
             min="1"
-            max="10000"
+            max="100"
             className="mt-1"
           />
         </div>

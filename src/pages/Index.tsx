@@ -4,6 +4,7 @@ import { SearchSection } from "@/components/SearchSection";
 import { SearchResults } from "@/components/SearchResults";
 import { FeaturedAnalysis } from "@/components/FeaturedAnalysis";
 import { SystemMetrics } from "@/components/SystemMetrics";
+import { KnowledgeGraph } from "@/components/KnowledgeGraph";
 import { CaseImport } from "@/components/CaseImport";
 import { useToast } from "@/hooks/use-toast";
 import { useLegalCases, useCaseStats } from "@/hooks/useLegalCases";
@@ -54,6 +55,51 @@ const DEMO_CASES = [
     tags: ["Criminal Law", "Sixth Amendment", "Right to Counsel"],
     citations: 2134,
     conflicts: 1,
+  },
+  {
+    title: "Mapp v. Ohio",
+    court: "Supreme Court of the United States",
+    date: "Jun 19, 1961",
+    summary: "Extended the exclusionary rule to state courts, ruling that evidence obtained in violation of the Fourth Amendment cannot be used in state criminal prosecutions.",
+    tags: ["Criminal Law", "Fourth Amendment", "Search and Seizure"],
+    citations: 1876,
+    conflicts: 2,
+  },
+  {
+    title: "Plessy v. Ferguson",
+    court: "Supreme Court of the United States",
+    date: "May 18, 1896",
+    summary: "Upheld the constitutionality of racial segregation under the 'separate but equal' doctrine. Later overruled by Brown v. Board of Education.",
+    tags: ["Constitutional Law", "Civil Rights", "Equal Protection"],
+    citations: 892,
+    conflicts: 8,
+  },
+  {
+    title: "New York Times v. Sullivan",
+    court: "Supreme Court of the United States",
+    date: "Mar 9, 1964",
+    summary: "Established the 'actual malice' standard for defamation suits brought by public officials, significantly expanding First Amendment protections for the press.",
+    tags: ["First Amendment", "Defamation", "Press Freedom"],
+    citations: 2543,
+    conflicts: 1,
+  },
+  {
+    title: "Loving v. Virginia",
+    court: "Supreme Court of the United States",
+    date: "Jun 12, 1967",
+    summary: "Struck down laws banning interracial marriage, ruling that such statutes violated both the Equal Protection and Due Process Clauses of the Fourteenth Amendment.",
+    tags: ["Constitutional Law", "Civil Rights", "Marriage"],
+    citations: 1654,
+    conflicts: 0,
+  },
+  {
+    title: "Obergefell v. Hodges",
+    court: "Supreme Court of the United States",
+    date: "Jun 26, 2015",
+    summary: "Ruled that the fundamental right to marry is guaranteed to same-sex couples under both the Due Process Clause and the Equal Protection Clause.",
+    tags: ["Constitutional Law", "Civil Rights", "Marriage Equality"],
+    citations: 987,
+    conflicts: 2,
   },
 ];
 
@@ -156,6 +202,11 @@ const Index = () => {
             <SystemMetrics metrics={metrics} />
             <CaseImport />
           </div>
+        </div>
+        
+        {/* Knowledge Graph Section */}
+        <div className="mt-8">
+          <KnowledgeGraph cases={DEMO_CASES} />
         </div>
       </main>
     </div>

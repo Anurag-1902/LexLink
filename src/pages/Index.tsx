@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { LegalHeader } from "@/components/LegalHeader";
 import { SearchSection } from "@/components/SearchSection";
+import { SearchResults } from "@/components/SearchResults";
 import { FeaturedAnalysis } from "@/components/FeaturedAnalysis";
 import { SystemMetrics } from "@/components/SystemMetrics";
 import { CaseImport } from "@/components/CaseImport";
@@ -35,6 +37,24 @@ const DEMO_CASES = [
     citations: 2891,
     conflicts: 5,
   },
+  {
+    title: "Marbury v. Madison",
+    court: "Supreme Court of the United States",
+    date: "Feb 24, 1803",
+    summary: "Established the principle of judicial review, giving the Supreme Court the power to declare laws unconstitutional. Foundational case for American constitutional law.",
+    tags: ["Constitutional Law", "Judicial Review", "Separation of Powers"],
+    citations: 5621,
+    conflicts: 0,
+  },
+  {
+    title: "Gideon v. Wainwright",
+    court: "Supreme Court of the United States",
+    date: "Mar 18, 1963",
+    summary: "Ruled that states are required to provide counsel in criminal cases for defendants who cannot afford an attorney. Extended the Sixth Amendment right to counsel.",
+    tags: ["Criminal Law", "Sixth Amendment", "Right to Counsel"],
+    citations: 2134,
+    conflicts: 1,
+  },
 ];
 
 const DEMO_METRICS = {
@@ -44,10 +64,34 @@ const DEMO_METRICS = {
   similarityScore: 87.3,
 };
 
+// Simple semantic similarity function using keyword matching
+const calculateRelevance = (query: string, caseData: typeof DEMO_CASES[0]): number => {
+  const queryLower = query.toLowerCase();
+  const searchableText = `${caseData.title} ${caseData.summary} ${caseData.tags.join(" ")}`.toLowerCase();
+  
+  // Check for exact phrase match
+  if (searchableText.includes(queryLower)) {
+    return 0.95 + Math.random() * 0.05;
+  }
+  
+  // Check for word matches
+  const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
+  const matchCount = queryWords.filter(word => searchableText.includes(word)).length;
+  
+  if (matchCount > 0) {
+    return 0.7 + (matchCount / queryWords.length) * 0.25;
+  }
+  
+  // Base relevance for legal topics
+  return 0.4 + Math.random() * 0.2;
+};
+
 const Index = () => {
   const { toast } = useToast();
   const { data: cases, isLoading } = useLegalCases(1);
   const { data: stats } = useCaseStats();
+  const [searchResults, setSearchResults] = useState<Array<typeof DEMO_CASES[0] & { relevanceScore: number }>>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Use real data if available, otherwise use demo data
   const hasRealData = cases && cases.length > 0;
@@ -70,16 +114,38 @@ const Index = () => {
   } : DEMO_METRICS;
 
   const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    
+    // Calculate relevance scores and sort
+    const results = DEMO_CASES
+      .map(c => ({ ...c, relevanceScore: calculateRelevance(query, c) }))
+      .sort((a, b) => b.relevanceScore - a.relevanceScore);
+    
+    setSearchResults(results);
+    
     toast({
-      title: "Semantic Search Initiated",
-      description: `Analyzing: "${query}" across ${metrics.totalCases.toLocaleString()} cases...`,
+      title: "Semantic Search Complete",
+      description: `Found ${results.length} relevant cases for "${query}"`,
     });
+  };
+
+  const clearResults = () => {
+    setSearchResults([]);
+    setSearchQuery("");
   };
 
   return (
     <div className="min-h-screen bg-background">
       <LegalHeader />
       <SearchSection onSearch={handleSearch} />
+      
+      {searchResults.length > 0 && (
+        <SearchResults 
+          results={searchResults} 
+          query={searchQuery} 
+          onClose={clearResults}
+        />
+      )}
       
       <main className="max-w-7xl mx-auto px-8 py-12">
         <div className="grid lg:grid-cols-3 gap-8 mb-8">

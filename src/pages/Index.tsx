@@ -206,9 +206,9 @@ const Index = () => {
           </div>
         </div>
         
-        {/* Knowledge Graph Section */}
+        {/* Knowledge Graph Section - Now Dynamic */}
         <div className="mt-8">
-          <KnowledgeGraph cases={DEMO_CASES} />
+          <KnowledgeGraph />
         </div>
       </main>
     </div>

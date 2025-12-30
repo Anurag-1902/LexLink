@@ -6,6 +6,7 @@ import { FeaturedAnalysis } from "@/components/FeaturedAnalysis";
 import { SystemMetrics } from "@/components/SystemMetrics";
 import { KnowledgeGraph } from "@/components/KnowledgeGraph";
 import { CaseImport } from "@/components/CaseImport";
+import { SyntheticDataGenerator } from "@/components/SyntheticDataGenerator";
 import { useToast } from "@/hooks/use-toast";
 import { useLegalCases, useCaseStats } from "@/hooks/useLegalCases";
 
@@ -198,8 +199,9 @@ const Index = () => {
           <div className="lg:col-span-2">
             <FeaturedAnalysis case={featuredCase} />
           </div>
-          <div className="space-y-8">
+          <div className="space-y-6">
             <SystemMetrics metrics={metrics} />
+            <SyntheticDataGenerator />
             <CaseImport />
           </div>
         </div>

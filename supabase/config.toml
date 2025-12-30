@@ -1,1 +1,7 @@
 project_id = "brpyoikhxrlqemhshnxm"
+
+[functions.import-cases]
+verify_jwt = false
+
+[functions.generate-synthetic-cases]
+verify_jwt = false

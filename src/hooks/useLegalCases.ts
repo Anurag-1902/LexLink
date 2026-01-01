@@ -40,33 +40,86 @@ export const useLegalCases = (limit = 10) => {
   });
 };
 
-export const useImportCases = () => {
+export const useAddCase = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ court = "", limit = 20, page = 1 }: { 
-      court?: string; 
-      limit?: number;
-      page?: number;
+    mutationFn: async (caseData: {
+      name: string;
+      court: string;
+      case_id: string;
+      jurisdiction?: string;
+      decision_date?: string;
+      summary?: string;
+      docket_number?: string;
     }) => {
-      const { data, error } = await supabase.functions.invoke("import-cases", {
-        body: { court, limit, page },
-      });
+      const { data, error } = await supabase
+        .from("legal_cases")
+        .insert({
+          name: caseData.name,
+          court: caseData.court,
+          case_id: caseData.case_id,
+          jurisdiction: caseData.jurisdiction,
+          decision_date: caseData.decision_date,
+          summary: caseData.summary,
+          docket_number: caseData.docket_number,
+        })
+        .select()
+        .single();
 
       if (error) throw error;
       return data;
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["legal-cases"] });
+      queryClient.invalidateQueries({ queryKey: ["case-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph"] });
       toast({
-        title: "Cases imported successfully",
-        description: `Processed ${data.processed} cases. ${data.errors > 0 ? `${data.errors} errors occurred.` : ''}`,
+        title: "Case added",
+        description: "The case has been added to the dataset.",
       });
     },
     onError: (error: Error) => {
       toast({
-        title: "Import failed",
+        title: "Failed to add case",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+};
+
+export const useDeleteCase = () => {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (caseId: string) => {
+      // Delete related citations, similarities, and contradictions first
+      await supabase.from("case_citations").delete().or(`citing_case_id.eq.${caseId},cited_case_id.eq.${caseId}`);
+      await supabase.from("case_similarities").delete().or(`case_a_id.eq.${caseId},case_b_id.eq.${caseId}`);
+      await supabase.from("case_contradictions").delete().or(`case_a_id.eq.${caseId},case_b_id.eq.${caseId}`);
+
+      const { error } = await supabase
+        .from("legal_cases")
+        .delete()
+        .eq("id", caseId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["legal-cases"] });
+      queryClient.invalidateQueries({ queryKey: ["case-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph"] });
+      toast({
+        title: "Case deleted",
+        description: "The case has been removed from the dataset.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to delete case",
         description: error.message,
         variant: "destructive",
       });

@@ -5,7 +5,7 @@ import { SearchResults } from "@/components/SearchResults";
 import { FeaturedAnalysis } from "@/components/FeaturedAnalysis";
 import { SystemMetrics } from "@/components/SystemMetrics";
 import { KnowledgeGraph } from "@/components/KnowledgeGraph";
-import { CaseImport } from "@/components/CaseImport";
+import { CaseManager } from "@/components/CaseManager";
 import { SyntheticDataGenerator } from "@/components/SyntheticDataGenerator";
 import { useToast } from "@/hooks/use-toast";
 import { useLegalCases, useCaseStats } from "@/hooks/useLegalCases";
@@ -201,8 +201,8 @@ const Index = () => {
           </div>
           <div className="space-y-6">
             <SystemMetrics metrics={metrics} />
+            <CaseManager />
             <SyntheticDataGenerator />
-            <CaseImport />
           </div>
         </div>
         

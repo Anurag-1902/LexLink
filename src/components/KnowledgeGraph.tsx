@@ -4,20 +4,22 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Slider } from "./ui/slider";
 import { useKnowledgeGraph, GraphNode, GraphEdge } from "@/hooks/useKnowledgeGraph";
-import { Loader2, ZoomIn, ZoomOut, Maximize2, Info } from "lucide-react";
+import { Loader2, ZoomIn, ZoomOut, Maximize2, Info, BookOpen, Scale, AlertTriangle, Link2 } from "lucide-react";
 
-const EDGE_COLORS = {
-  cites: "hsl(220, 60%, 60%)",
-  overrules: "hsl(0, 70%, 55%)",
-  similar: "hsl(140, 60%, 45%)",
-  contradicts: "hsl(280, 70%, 55%)",
+const EDGE_STYLES = {
+  cites: { color: "hsl(220, 60%, 60%)", dash: "", arrow: true },
+  overrules: { color: "hsl(0, 80%, 55%)", dash: "", arrow: true },
+  similar: { color: "hsl(140, 60%, 50%)", dash: "6,4", arrow: false },
+  contradicts: { color: "hsl(320, 70%, 55%)", dash: "4,4", arrow: false },
+  belongs_to: { color: "hsl(0, 0%, 60%)", dash: "2,2", arrow: false },
 };
 
-const EDGE_LABELS = {
-  cites: "Cites",
-  overrules: "Overrules",
-  similar: "Similar",
-  contradicts: "Contradicts",
+const EDGE_LABELS: Record<string, { label: string; icon: typeof Link2 }> = {
+  cites: { label: "Cites", icon: BookOpen },
+  overrules: { label: "Overrules", icon: AlertTriangle },
+  similar: { label: "Similar", icon: Link2 },
+  contradicts: { label: "Contradicts", icon: AlertTriangle },
+  belongs_to: { label: "Domain", icon: Scale },
 };
 
 export const KnowledgeGraph = () => {
@@ -31,6 +33,7 @@ export const KnowledgeGraph = () => {
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
   const [draggedNode, setDraggedNode] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [showDomainConnections, setShowDomainConnections] = useState(false);
 
   useEffect(() => {
     if (data?.nodes) {
@@ -73,6 +76,18 @@ export const KnowledgeGraph = () => {
   const handleZoomOut = () => setZoom(z => Math.max(z - 0.2, 0.4));
   const handleReset = () => setZoom(1);
 
+  // Filter edges based on visibility settings
+  const visibleEdges = (data?.edges || []).filter(e => 
+    showDomainConnections || e.type !== 'belongs_to'
+  );
+
+  // Stats for display
+  const caseNodes = nodes.filter(n => n.type === 'case');
+  const domainNodes = nodes.filter(n => n.type === 'domain');
+  const citationEdges = visibleEdges.filter(e => e.type === 'cites');
+  const similarEdges = visibleEdges.filter(e => e.type === 'similar');
+  const contradictEdges = visibleEdges.filter(e => e.type === 'contradicts' || e.type === 'overrules');
+
   if (isLoading) {
     return (
       <Card className="animate-fade-in">
@@ -83,9 +98,9 @@ export const KnowledgeGraph = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-[400px] flex items-center justify-center bg-muted/30 rounded-lg">
+          <div className="h-[500px] flex items-center justify-center bg-muted/30 rounded-lg">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <span className="ml-2 text-muted-foreground">Loading graph data...</span>
+            <span className="ml-2 text-muted-foreground">Building knowledge graph...</span>
           </div>
         </CardContent>
       </Card>
@@ -99,7 +114,7 @@ export const KnowledgeGraph = () => {
           <CardTitle className="text-lg">Knowledge Graph</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-[400px] flex items-center justify-center text-destructive bg-muted/30 rounded-lg">
+          <div className="h-[500px] flex items-center justify-center text-destructive bg-muted/30 rounded-lg">
             Error loading graph. Generate some cases first!
           </div>
         </CardContent>
@@ -107,24 +122,22 @@ export const KnowledgeGraph = () => {
     );
   }
 
-  const edges = data?.edges || [];
-
   return (
     <Card className="animate-fade-in">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-primary animate-pulse" />
-              Interactive Knowledge Graph
+              <Scale className="w-5 h-5 text-primary" />
+              Legal Case Knowledge Graph
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              Dynamic visualization from database • Drag nodes • Click for details
+              Interactive visualization showing case relationships, citations, similarities & contradictions
             </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>Nodes:</span>
+              <span>Cases:</span>
               <Slider
                 value={[nodeLimit]}
                 onValueChange={([v]) => setNodeLimit(v)}
@@ -135,6 +148,14 @@ export const KnowledgeGraph = () => {
               />
               <span className="w-6 text-xs">{nodeLimit}</span>
             </div>
+            <Button 
+              variant={showDomainConnections ? "secondary" : "ghost"} 
+              size="sm"
+              onClick={() => setShowDomainConnections(!showDomainConnections)}
+              className="text-xs"
+            >
+              {showDomainConnections ? "Hide" : "Show"} Domains
+            </Button>
             <div className="flex gap-1">
               <Button variant="ghost" size="icon" onClick={handleZoomOut} className="h-8 w-8">
                 <ZoomOut className="h-4 w-4" />
@@ -149,31 +170,43 @@ export const KnowledgeGraph = () => {
           </div>
         </div>
         
-        {/* Legend */}
-        <div className="flex flex-wrap gap-3 mt-3 text-xs">
+        {/* Enhanced Legend */}
+        <div className="flex flex-wrap gap-4 mt-4 p-3 bg-muted/30 rounded-lg text-xs">
           <div className="flex items-center gap-3">
-            <span className="text-muted-foreground font-medium">Nodes:</span>
+            <span className="text-muted-foreground font-semibold">Court Level:</span>
             <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-full" style={{ background: 'hsl(220, 70%, 50%)' }} />
+              <div className="w-4 h-4 rounded-full border-2" style={{ background: 'hsl(45, 100%, 50%)' }} />
               <span>Supreme</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-full" style={{ background: 'hsl(200, 60%, 50%)' }} />
+              <div className="w-3 h-3 rounded-full" style={{ background: 'hsl(200, 70%, 55%)' }} />
               <span>Appeals</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-full" style={{ background: 'hsl(35, 90%, 50%)' }} />
-              <span>Concept</span>
+              <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(160, 55%, 50%)' }} />
+              <span>District</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-muted-foreground font-medium">Edges:</span>
-            {Object.entries(EDGE_COLORS).map(([type, color]) => (
-              <div key={type} className="flex items-center gap-1">
-                <div className="w-4 h-0.5" style={{ background: color }} />
-                <span>{EDGE_LABELS[type as keyof typeof EDGE_LABELS]}</span>
-              </div>
-            ))}
+            <span className="text-muted-foreground font-semibold">Relationships:</span>
+            <div className="flex items-center gap-1">
+              <div className="w-5 h-0.5" style={{ background: EDGE_STYLES.cites.color }} />
+              <BookOpen className="w-3 h-3" style={{ color: EDGE_STYLES.cites.color }} />
+              <span>Cites</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-5 h-0.5" style={{ background: EDGE_STYLES.similar.color, borderTop: '2px dashed' }} />
+              <span style={{ color: EDGE_STYLES.similar.color }}>Similar</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-5 h-0.5" style={{ background: EDGE_STYLES.contradicts.color }} />
+              <AlertTriangle className="w-3 h-3" style={{ color: EDGE_STYLES.contradicts.color }} />
+              <span>Contradicts</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-5 h-0.5" style={{ background: EDGE_STYLES.overrules.color }} />
+              <span style={{ color: EDGE_STYLES.overrules.color }}>Overrules</span>
+            </div>
           </div>
         </div>
       </CardHeader>
@@ -181,8 +214,8 @@ export const KnowledgeGraph = () => {
       <CardContent>
         <div
           ref={containerRef}
-          className="relative bg-muted/30 rounded-lg overflow-hidden cursor-grab active:cursor-grabbing"
-          style={{ height: 450 }}
+          className="relative bg-gradient-to-br from-muted/40 to-muted/20 rounded-lg overflow-hidden cursor-grab active:cursor-grabbing border border-border/50"
+          style={{ height: 500 }}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
@@ -191,54 +224,54 @@ export const KnowledgeGraph = () => {
             <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
               <Info className="h-12 w-12 mb-4 opacity-50" />
               <p className="text-lg font-medium">No cases in database</p>
-              <p className="text-sm">Generate synthetic cases to populate the knowledge graph</p>
+              <p className="text-sm">Generate synthetic cases or add cases manually</p>
             </div>
           ) : (
             <svg
               width="100%"
               height="100%"
-              viewBox="0 0 800 450"
+              viewBox="0 0 800 500"
               style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }}
               className="transition-transform duration-200"
             >
               <defs>
-                <marker
-                  id="arrowhead-cites"
-                  markerWidth="6"
-                  markerHeight="4"
-                  refX="5"
-                  refY="2"
-                  orient="auto"
-                >
-                  <polygon points="0 0, 6 2, 0 4" fill={EDGE_COLORS.cites} />
-                </marker>
-                <marker
-                  id="arrowhead-overrules"
-                  markerWidth="6"
-                  markerHeight="4"
-                  refX="5"
-                  refY="2"
-                  orient="auto"
-                >
-                  <polygon points="0 0, 6 2, 0 4" fill={EDGE_COLORS.overrules} />
-                </marker>
+                {/* Arrow markers for each edge type */}
+                {Object.entries(EDGE_STYLES).map(([type, style]) => (
+                  style.arrow && (
+                    <marker
+                      key={`arrow-${type}`}
+                      id={`arrow-${type}`}
+                      markerWidth="8"
+                      markerHeight="6"
+                      refX="7"
+                      refY="3"
+                      orient="auto"
+                    >
+                      <polygon points="0 0, 8 3, 0 6" fill={style.color} />
+                    </marker>
+                  )
+                ))}
                 <filter id="glow">
-                  <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                  <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
                   <feMerge>
                     <feMergeNode in="coloredBlur"/>
                     <feMergeNode in="SourceGraphic"/>
                   </feMerge>
                 </filter>
+                <filter id="shadow">
+                  <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.3"/>
+                </filter>
               </defs>
 
               {/* Edges */}
-              {edges.map(edge => {
+              {visibleEdges.map(edge => {
                 const sourceNode = getNodeById(edge.source);
                 const targetNode = getNodeById(edge.target);
                 if (!sourceNode || !targetNode) return null;
 
                 const isHovered = hoveredEdge === edge.id;
-                const color = EDGE_COLORS[edge.type];
+                const style = EDGE_STYLES[edge.type];
+                const isRelationship = edge.type !== 'belongs_to';
 
                 return (
                   <g key={edge.id}>
@@ -247,29 +280,39 @@ export const KnowledgeGraph = () => {
                       y1={sourceNode.y}
                       x2={targetNode.x}
                       y2={targetNode.y}
-                      stroke={color}
-                      strokeWidth={isHovered ? 3 : 1.5}
-                      strokeOpacity={isHovered ? 1 : 0.5}
-                      strokeDasharray={edge.type === 'similar' ? '4,4' : undefined}
-                      markerEnd={edge.type === 'cites' || edge.type === 'overrules' 
-                        ? `url(#arrowhead-${edge.type})` 
-                        : undefined}
+                      stroke={style.color}
+                      strokeWidth={isHovered ? 3 : isRelationship ? 2 : 1}
+                      strokeOpacity={isHovered ? 1 : isRelationship ? 0.7 : 0.2}
+                      strokeDasharray={style.dash}
+                      markerEnd={style.arrow ? `url(#arrow-${edge.type})` : undefined}
                       onMouseEnter={() => setHoveredEdge(edge.id)}
                       onMouseLeave={() => setHoveredEdge(null)}
                       style={{ cursor: 'pointer', transition: 'all 0.2s' }}
                     />
-                    {isHovered && (
-                      <text
-                        x={(sourceNode.x + targetNode.x) / 2}
-                        y={(sourceNode.y + targetNode.y) / 2 - 8}
-                        textAnchor="middle"
-                        fontSize="10"
-                        fill={color}
-                        fontWeight="600"
-                      >
-                        {EDGE_LABELS[edge.type]}
-                        {edge.weight && ` (${(edge.weight * 100).toFixed(0)}%)`}
-                      </text>
+                    {isHovered && isRelationship && (
+                      <g>
+                        <rect
+                          x={(sourceNode.x + targetNode.x) / 2 - 40}
+                          y={(sourceNode.y + targetNode.y) / 2 - 12}
+                          width="80"
+                          height="20"
+                          rx="4"
+                          fill="hsl(var(--background))"
+                          stroke={style.color}
+                          strokeWidth="1"
+                        />
+                        <text
+                          x={(sourceNode.x + targetNode.x) / 2}
+                          y={(sourceNode.y + targetNode.y) / 2 + 2}
+                          textAnchor="middle"
+                          fontSize="10"
+                          fill={style.color}
+                          fontWeight="600"
+                        >
+                          {EDGE_LABELS[edge.type]?.label}
+                          {edge.weight && ` ${(edge.weight * 100).toFixed(0)}%`}
+                        </text>
+                      </g>
                     )}
                   </g>
                 );
@@ -279,7 +322,8 @@ export const KnowledgeGraph = () => {
               {nodes.map(node => {
                 const isSelected = selectedNode?.id === node.id;
                 const isHovered = hoveredNode === node.id;
-                const radius = node.type === 'concept' ? 14 : 12;
+                const isDomain = node.type === 'domain';
+                const radius = node.size || (isDomain ? 18 : 10);
 
                 return (
                   <g
@@ -295,41 +339,68 @@ export const KnowledgeGraph = () => {
                       <circle
                         cx={node.x}
                         cy={node.y}
-                        r={radius + 6}
+                        r={radius + 8}
                         fill="none"
                         stroke={node.color}
-                        strokeWidth="2"
+                        strokeWidth="3"
                         strokeOpacity="0.4"
                         filter="url(#glow)"
                       />
                     )}
                     
-                    {/* Node circle */}
-                    <circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={radius}
-                      fill={node.type === 'case' ? node.color : 'hsl(var(--background))'}
-                      stroke={node.color}
-                      strokeWidth={node.type === 'concept' ? 2 : 0}
-                      style={{ 
-                        transition: 'all 0.2s',
-                        transform: isHovered ? 'scale(1.15)' : 'scale(1)',
-                        transformOrigin: `${node.x}px ${node.y}px`
-                      }}
-                    />
+                    {/* Domain node shape (hexagon-ish) */}
+                    {isDomain ? (
+                      <g filter="url(#shadow)">
+                        <circle
+                          cx={node.x}
+                          cy={node.y}
+                          r={radius}
+                          fill={node.color}
+                          stroke="hsl(var(--background))"
+                          strokeWidth="3"
+                        />
+                        <text
+                          x={node.x}
+                          y={node.y + 1}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize="8"
+                          fill="white"
+                          fontWeight="700"
+                        >
+                          {node.label.split(' ')[0].substring(0, 4)}
+                        </text>
+                      </g>
+                    ) : (
+                      /* Case node */
+                      <circle
+                        cx={node.x}
+                        cy={node.y}
+                        r={radius}
+                        fill={node.color}
+                        stroke="hsl(var(--background))"
+                        strokeWidth="2"
+                        filter={isHovered ? "url(#shadow)" : undefined}
+                        style={{ 
+                          transition: 'all 0.2s',
+                          transform: isHovered ? 'scale(1.2)' : 'scale(1)',
+                          transformOrigin: `${node.x}px ${node.y}px`
+                        }}
+                      />
+                    )}
                     
                     {/* Node label */}
                     <text
                       x={node.x}
                       y={node.y + radius + 12}
                       textAnchor="middle"
-                      fontSize="8"
+                      fontSize={isDomain ? "10" : "8"}
                       fill="currentColor"
+                      fontWeight={isDomain ? "600" : "400"}
                       className="pointer-events-none"
-                      style={{ opacity: 0.8 }}
+                      style={{ opacity: isDomain ? 1 : 0.85 }}
                     >
-                      {node.label.length > 18 ? node.label.substring(0, 16) + '...' : node.label}
+                      {node.label.length > 20 ? node.label.substring(0, 18) + '...' : node.label}
                     </text>
                   </g>
                 );
@@ -338,52 +409,99 @@ export const KnowledgeGraph = () => {
           )}
 
           {/* Stats overlay */}
-          <div className="absolute top-3 left-3 flex gap-2">
-            <Badge variant="secondary" className="text-xs">
-              {nodes.length} nodes
+          <div className="absolute top-3 left-3 flex flex-wrap gap-2">
+            <Badge variant="secondary" className="text-xs bg-background/80 backdrop-blur-sm">
+              {caseNodes.length} cases
             </Badge>
-            <Badge variant="secondary" className="text-xs">
-              {edges.length} edges
+            <Badge variant="secondary" className="text-xs bg-background/80 backdrop-blur-sm">
+              {domainNodes.length} domains
             </Badge>
+            <Badge className="text-xs" style={{ background: EDGE_STYLES.cites.color }}>
+              {citationEdges.length} citations
+            </Badge>
+            <Badge className="text-xs" style={{ background: EDGE_STYLES.similar.color }}>
+              {similarEdges.length} similar
+            </Badge>
+            {contradictEdges.length > 0 && (
+              <Badge className="text-xs" style={{ background: EDGE_STYLES.contradicts.color }}>
+                {contradictEdges.length} conflicts
+              </Badge>
+            )}
+          </div>
+
+          {/* Help text */}
+          <div className="absolute bottom-3 right-3 text-xs text-muted-foreground bg-background/70 backdrop-blur-sm px-2 py-1 rounded">
+            Drag nodes • Click for details • Scroll to zoom
           </div>
         </div>
 
-        {/* Selected node details */}
+        {/* Selected node details panel */}
         {selectedNode && (
-          <div className="mt-4 p-4 rounded-lg bg-muted/50 border border-border/50 animate-fade-in">
-            <div className="flex items-start justify-between">
-              <div>
-                <h4 className="font-semibold text-foreground">
-                  {selectedNode.label}
-                </h4>
-                <div className="flex flex-wrap gap-2 mt-2">
+          <div className="mt-4 p-4 rounded-lg bg-muted/50 border border-border animate-fade-in">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  {selectedNode.type === 'domain' ? (
+                    <Scale className="w-5 h-5" style={{ color: selectedNode.color }} />
+                  ) : (
+                    <BookOpen className="w-5 h-5" style={{ color: selectedNode.color }} />
+                  )}
+                  <h4 className="font-semibold text-foreground text-lg">
+                    {selectedNode.label}
+                  </h4>
+                </div>
+                
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <Badge 
+                    style={{ backgroundColor: selectedNode.color, color: 'white' }}
+                  >
+                    {selectedNode.type === 'domain' ? 'Legal Domain' : 'Case'}
+                  </Badge>
                   {selectedNode.court && (
-                    <Badge variant="outline" className="text-xs">{selectedNode.court}</Badge>
+                    <Badge variant="outline">{selectedNode.court}</Badge>
                   )}
                   {selectedNode.jurisdiction && (
-                    <Badge variant="outline" className="text-xs">{selectedNode.jurisdiction}</Badge>
+                    <Badge variant="outline">{selectedNode.jurisdiction}</Badge>
                   )}
                   {selectedNode.date && (
-                    <Badge variant="outline" className="text-xs">{selectedNode.date}</Badge>
+                    <Badge variant="secondary">
+                      {new Date(selectedNode.date).toLocaleDateString('en-US', { 
+                        year: 'numeric', 
+                        month: 'short' 
+                      })}
+                    </Badge>
                   )}
-                  <Badge 
-                    className="text-xs"
-                    style={{ 
-                      backgroundColor: selectedNode.color,
-                      color: 'white'
-                    }}
-                  >
-                    {selectedNode.type}
-                  </Badge>
                 </div>
+
+                {selectedNode.description && (
+                  <p className="text-sm text-muted-foreground mt-3">{selectedNode.description}</p>
+                )}
               </div>
-              <div className="text-right text-sm text-muted-foreground">
-                <p>
-                  Connections: {edges.filter(e => 
+              
+              <div className="text-right">
+                <div className="text-2xl font-bold text-primary">
+                  {visibleEdges.filter(e => 
                     e.source === selectedNode.id || e.target === selectedNode.id
-                  ).length}
-                </p>
+                  ).filter(e => e.type !== 'belongs_to').length}
+                </div>
+                <div className="text-xs text-muted-foreground">connections</div>
               </div>
+            </div>
+
+            {/* Connection breakdown for selected node */}
+            <div className="mt-4 pt-3 border-t border-border/50 grid grid-cols-4 gap-3 text-center text-xs">
+              {['cites', 'similar', 'contradicts', 'overrules'].map(type => {
+                const count = visibleEdges.filter(e => 
+                  e.type === type && (e.source === selectedNode.id || e.target === selectedNode.id)
+                ).length;
+                const style = EDGE_STYLES[type as keyof typeof EDGE_STYLES];
+                return (
+                  <div key={type} className="p-2 rounded bg-background/50">
+                    <div className="font-semibold" style={{ color: style.color }}>{count}</div>
+                    <div className="text-muted-foreground capitalize">{type}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

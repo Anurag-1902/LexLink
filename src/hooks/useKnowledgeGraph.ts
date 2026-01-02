@@ -1,6 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
+export interface CaseDetails {
+  id: string;
+  name: string;
+  court: string;
+  summary?: string | null;
+  decision_date?: string | null;
+  jurisdiction?: string | null;
+  citedBy: { id: string; name: string }[];
+  cites: { id: string; name: string }[];
+  contradictions: { id: string; name: string; type: string }[];
+  similarities: { id: string; name: string; score: number }[];
+}
+
 export interface GraphNode {
   id: string;
   label: string;
@@ -13,6 +26,8 @@ export interface GraphNode {
   jurisdiction?: string;
   size?: number;
   description?: string;
+  summary?: string;
+  caseDetails?: CaseDetails;
 }
 
 export interface GraphEdge {
@@ -126,6 +141,50 @@ export const useKnowledgeGraph = (limit: number = 50) => {
       const similarities = similaritiesRes.data || [];
       const contradictions = contradictionsRes.data || [];
 
+      // Build case details lookup for rich info panel
+      const caseMap = new Map(cases.map(c => [c.id, c]));
+      const caseDetailsMap = new Map<string, CaseDetails>();
+      
+      cases.forEach(c => {
+        const citedBy = citations
+          .filter(cit => cit.cited_case_id === c.id && cit.citing_case_id && caseMap.has(cit.citing_case_id))
+          .map(cit => ({ id: cit.citing_case_id!, name: caseMap.get(cit.citing_case_id!)?.name || 'Unknown' }));
+        
+        const cites = citations
+          .filter(cit => cit.citing_case_id === c.id && cit.cited_case_id && caseMap.has(cit.cited_case_id))
+          .map(cit => ({ id: cit.cited_case_id!, name: caseMap.get(cit.cited_case_id!)?.name || 'Unknown' }));
+        
+        const caseContradictions = contradictions
+          .filter(con => (con.case_a_id === c.id || con.case_b_id === c.id) && 
+            caseMap.has(con.case_a_id!) && caseMap.has(con.case_b_id!))
+          .map(con => {
+            const otherId = con.case_a_id === c.id ? con.case_b_id! : con.case_a_id!;
+            return { id: otherId, name: caseMap.get(otherId)?.name || 'Unknown', type: con.conflict_type };
+          });
+        
+        const caseSimilarities = similarities
+          .filter(sim => (sim.case_a_id === c.id || sim.case_b_id === c.id) && 
+            sim.similarity_score >= 0.5 &&
+            caseMap.has(sim.case_a_id!) && caseMap.has(sim.case_b_id!))
+          .map(sim => {
+            const otherId = sim.case_a_id === c.id ? sim.case_b_id! : sim.case_a_id!;
+            return { id: otherId, name: caseMap.get(otherId)?.name || 'Unknown', score: sim.similarity_score };
+          });
+
+        caseDetailsMap.set(c.id, {
+          id: c.id,
+          name: c.name,
+          court: c.court,
+          summary: c.summary,
+          decision_date: c.decision_date,
+          jurisdiction: c.jurisdiction,
+          citedBy,
+          cites,
+          contradictions: caseContradictions,
+          similarities: caseSimilarities,
+        });
+      });
+
       // Group cases by domain for clustered layout
       const casesByDomain: Record<string, typeof cases> = {};
       cases.forEach(c => {
@@ -197,6 +256,8 @@ export const useKnowledgeGraph = (limit: number = 50) => {
             date: caseItem.decision_date,
             jurisdiction: caseItem.jurisdiction,
             size: courtLevel === 0 ? 14 : courtLevel === 1 ? 11 : 9,
+            summary: caseItem.summary || undefined,
+            caseDetails: caseDetailsMap.get(caseItem.id),
           });
 
           // Connect case to its domain

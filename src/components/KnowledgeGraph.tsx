@@ -3,8 +3,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Slider } from "./ui/slider";
+import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { useKnowledgeGraph, GraphNode, GraphEdge } from "@/hooks/useKnowledgeGraph";
-import { Loader2, ZoomIn, ZoomOut, Maximize2, Info, BookOpen, Scale, AlertTriangle, Link2 } from "lucide-react";
+import { useAddCase } from "@/hooks/useLegalCases";
+import { Loader2, ZoomIn, ZoomOut, Maximize2, Info, BookOpen, Scale, AlertTriangle, Link2, Plus, X, FileText, GitBranch, Users } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 const EDGE_STYLES = {
   cites: { color: "hsl(220, 60%, 60%)", dash: "", arrow: true },
@@ -22,9 +28,22 @@ const EDGE_LABELS: Record<string, { label: string; icon: typeof Link2 }> = {
   belongs_to: { label: "Domain", icon: Scale },
 };
 
+const COURTS = [
+  "Supreme Court of the United States",
+  "U.S. Court of Appeals",
+  "U.S. District Court",
+  "State Supreme Court",
+  "State Court of Appeals",
+  "State Trial Court",
+];
+
+const JURISDICTIONS = ["Federal", "California", "New York", "Texas", "Florida", "Illinois", "Pennsylvania"];
+
 export const KnowledgeGraph = () => {
+  const { toast } = useToast();
   const [nodeLimit, setNodeLimit] = useState(30);
-  const { data, isLoading, error } = useKnowledgeGraph(nodeLimit);
+  const { data, isLoading, error, refetch } = useKnowledgeGraph(nodeLimit);
+  const addCaseMutation = useAddCase();
   
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -34,6 +53,15 @@ export const KnowledgeGraph = () => {
   const [draggedNode, setDraggedNode] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [showDomainConnections, setShowDomainConnections] = useState(false);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [newCase, setNewCase] = useState({
+    name: "",
+    court: "",
+    jurisdiction: "",
+    decision_date: "",
+    docket_number: "",
+    summary: "",
+  });
 
   useEffect(() => {
     if (data?.nodes) {
@@ -75,6 +103,32 @@ export const KnowledgeGraph = () => {
   const handleZoomIn = () => setZoom(z => Math.min(z + 0.2, 2.5));
   const handleZoomOut = () => setZoom(z => Math.max(z - 0.2, 0.4));
   const handleReset = () => setZoom(1);
+
+  const handleAddCase = async () => {
+    if (!newCase.name || !newCase.court) {
+      toast({ title: "Error", description: "Case name and court are required", variant: "destructive" });
+      return;
+    }
+    
+    try {
+      await addCaseMutation.mutateAsync({
+        case_id: `GRAPH-${Date.now()}`,
+        name: newCase.name,
+        court: newCase.court,
+        jurisdiction: newCase.jurisdiction || undefined,
+        decision_date: newCase.decision_date || undefined,
+        docket_number: newCase.docket_number || undefined,
+        summary: newCase.summary || undefined,
+      });
+      
+      toast({ title: "Success", description: "Case added to graph" });
+      setNewCase({ name: "", court: "", jurisdiction: "", decision_date: "", docket_number: "", summary: "" });
+      setIsAddDialogOpen(false);
+      refetch();
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to add case", variant: "destructive" });
+    }
+  };
 
   // Filter edges based on visibility settings
   const visibleEdges = (data?.edges || []).filter(e => 
@@ -136,6 +190,52 @@ export const KnowledgeGraph = () => {
             </p>
           </div>
           <div className="flex items-center gap-4 flex-wrap">
+            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="gap-1">
+                  <Plus className="h-4 w-4" /> Add Case
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Add Case to Graph</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <Input
+                    placeholder="Case Name (e.g., Smith v. Jones)"
+                    value={newCase.name}
+                    onChange={(e) => setNewCase({ ...newCase, name: e.target.value })}
+                  />
+                  <Select value={newCase.court} onValueChange={(v) => setNewCase({ ...newCase, court: v })}>
+                    <SelectTrigger><SelectValue placeholder="Select Court" /></SelectTrigger>
+                    <SelectContent>
+                      {COURTS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={newCase.jurisdiction} onValueChange={(v) => setNewCase({ ...newCase, jurisdiction: v })}>
+                    <SelectTrigger><SelectValue placeholder="Select Jurisdiction" /></SelectTrigger>
+                    <SelectContent>
+                      {JURISDICTIONS.map(j => <SelectItem key={j} value={j}>{j}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="date"
+                    value={newCase.decision_date}
+                    onChange={(e) => setNewCase({ ...newCase, decision_date: e.target.value })}
+                  />
+                  <Textarea
+                    placeholder="Case Summary"
+                    value={newCase.summary}
+                    onChange={(e) => setNewCase({ ...newCase, summary: e.target.value })}
+                    rows={3}
+                  />
+                  <Button onClick={handleAddCase} disabled={addCaseMutation.isPending} className="w-full">
+                    {addCaseMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Add to Graph
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span>Cases:</span>
               <Slider
@@ -441,20 +541,26 @@ export const KnowledgeGraph = () => {
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6" 
+                    onClick={() => setSelectedNode(null)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                   {selectedNode.type === 'domain' ? (
                     <Scale className="w-5 h-5" style={{ color: selectedNode.color }} />
                   ) : (
                     <BookOpen className="w-5 h-5" style={{ color: selectedNode.color }} />
                   )}
                   <h4 className="font-semibold text-foreground text-lg">
-                    {selectedNode.label}
+                    {selectedNode.caseDetails?.name || selectedNode.label}
                   </h4>
                 </div>
                 
                 <div className="flex flex-wrap gap-2 mt-3">
-                  <Badge 
-                    style={{ backgroundColor: selectedNode.color, color: 'white' }}
-                  >
+                  <Badge style={{ backgroundColor: selectedNode.color, color: 'white' }}>
                     {selectedNode.type === 'domain' ? 'Legal Domain' : 'Case'}
                   </Badge>
                   {selectedNode.court && (
@@ -467,14 +573,24 @@ export const KnowledgeGraph = () => {
                     <Badge variant="secondary">
                       {new Date(selectedNode.date).toLocaleDateString('en-US', { 
                         year: 'numeric', 
-                        month: 'short' 
+                        month: 'short',
+                        day: 'numeric'
                       })}
                     </Badge>
                   )}
                 </div>
 
-                {selectedNode.description && (
-                  <p className="text-sm text-muted-foreground mt-3">{selectedNode.description}</p>
+                {/* Summary Section */}
+                {(selectedNode.summary || selectedNode.caseDetails?.summary) && (
+                  <div className="mt-4 p-3 rounded bg-background/60 border border-border/30">
+                    <div className="flex items-center gap-2 mb-2 text-sm font-medium">
+                      <FileText className="w-4 h-4 text-primary" />
+                      Summary
+                    </div>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {selectedNode.summary || selectedNode.caseDetails?.summary}
+                    </p>
+                  </div>
                 )}
               </div>
               
@@ -488,21 +604,126 @@ export const KnowledgeGraph = () => {
               </div>
             </div>
 
-            {/* Connection breakdown for selected node */}
-            <div className="mt-4 pt-3 border-t border-border/50 grid grid-cols-4 gap-3 text-center text-xs">
-              {['cites', 'similar', 'contradicts', 'overrules'].map(type => {
-                const count = visibleEdges.filter(e => 
-                  e.type === type && (e.source === selectedNode.id || e.target === selectedNode.id)
-                ).length;
-                const style = EDGE_STYLES[type as keyof typeof EDGE_STYLES];
-                return (
-                  <div key={type} className="p-2 rounded bg-background/50">
-                    <div className="font-semibold" style={{ color: style.color }}>{count}</div>
-                    <div className="text-muted-foreground capitalize">{type}</div>
+            {/* Detailed relationships for case nodes */}
+            {selectedNode.type === 'case' && selectedNode.caseDetails && (
+              <div className="mt-4 pt-4 border-t border-border/50 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Citations: This case cites */}
+                <div className="p-3 rounded bg-background/60 border border-border/30">
+                  <div className="flex items-center gap-2 mb-2 text-sm font-medium" style={{ color: EDGE_STYLES.cites.color }}>
+                    <BookOpen className="w-4 h-4" />
+                    Cites ({selectedNode.caseDetails.cites.length})
                   </div>
-                );
-              })}
-            </div>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                    {selectedNode.caseDetails.cites.length > 0 ? (
+                      selectedNode.caseDetails.cites.map(c => (
+                        <div key={c.id} className="text-xs text-muted-foreground truncate hover:text-foreground cursor-pointer"
+                          onClick={() => {
+                            const node = nodes.find(n => n.id === c.id);
+                            if (node) setSelectedNode(node);
+                          }}
+                        >
+                          → {c.name.length > 30 ? c.name.substring(0, 28) + '...' : c.name}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-muted-foreground/50 italic">None</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Cited By */}
+                <div className="p-3 rounded bg-background/60 border border-border/30">
+                  <div className="flex items-center gap-2 mb-2 text-sm font-medium" style={{ color: EDGE_STYLES.cites.color }}>
+                    <GitBranch className="w-4 h-4" />
+                    Cited By ({selectedNode.caseDetails.citedBy.length})
+                  </div>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                    {selectedNode.caseDetails.citedBy.length > 0 ? (
+                      selectedNode.caseDetails.citedBy.map(c => (
+                        <div key={c.id} className="text-xs text-muted-foreground truncate hover:text-foreground cursor-pointer"
+                          onClick={() => {
+                            const node = nodes.find(n => n.id === c.id);
+                            if (node) setSelectedNode(node);
+                          }}
+                        >
+                          ← {c.name.length > 30 ? c.name.substring(0, 28) + '...' : c.name}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-muted-foreground/50 italic">None</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Contradictions */}
+                <div className="p-3 rounded bg-background/60 border border-border/30">
+                  <div className="flex items-center gap-2 mb-2 text-sm font-medium" style={{ color: EDGE_STYLES.contradicts.color }}>
+                    <AlertTriangle className="w-4 h-4" />
+                    Contradictions ({selectedNode.caseDetails.contradictions.length})
+                  </div>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                    {selectedNode.caseDetails.contradictions.length > 0 ? (
+                      selectedNode.caseDetails.contradictions.map(c => (
+                        <div key={c.id} className="text-xs text-muted-foreground truncate hover:text-foreground cursor-pointer"
+                          onClick={() => {
+                            const node = nodes.find(n => n.id === c.id);
+                            if (node) setSelectedNode(node);
+                          }}
+                        >
+                          ⚠ {c.name.length > 25 ? c.name.substring(0, 23) + '...' : c.name}
+                          <span className="text-destructive/70 ml-1">({c.type})</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-muted-foreground/50 italic">None</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Similar Cases */}
+                <div className="p-3 rounded bg-background/60 border border-border/30">
+                  <div className="flex items-center gap-2 mb-2 text-sm font-medium" style={{ color: EDGE_STYLES.similar.color }}>
+                    <Users className="w-4 h-4" />
+                    Similar ({selectedNode.caseDetails.similarities.length})
+                  </div>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                    {selectedNode.caseDetails.similarities.length > 0 ? (
+                      selectedNode.caseDetails.similarities.map(c => (
+                        <div key={c.id} className="text-xs text-muted-foreground truncate hover:text-foreground cursor-pointer"
+                          onClick={() => {
+                            const node = nodes.find(n => n.id === c.id);
+                            if (node) setSelectedNode(node);
+                          }}
+                        >
+                          ≈ {c.name.length > 25 ? c.name.substring(0, 23) + '...' : c.name}
+                          <span className="text-green-600 ml-1">({Math.round(c.score * 100)}%)</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-muted-foreground/50 italic">None</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Simple connection breakdown for domain nodes */}
+            {selectedNode.type === 'domain' && (
+              <div className="mt-4 pt-3 border-t border-border/50 grid grid-cols-4 gap-3 text-center text-xs">
+                {['cites', 'similar', 'contradicts', 'overrules'].map(type => {
+                  const count = visibleEdges.filter(e => 
+                    e.type === type && (e.source === selectedNode.id || e.target === selectedNode.id)
+                  ).length;
+                  const style = EDGE_STYLES[type as keyof typeof EDGE_STYLES];
+                  return (
+                    <div key={type} className="p-2 rounded bg-background/50">
+                      <div className="font-semibold" style={{ color: style.color }}>{count}</div>
+                      <div className="text-muted-foreground capitalize">{type}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </CardContent>

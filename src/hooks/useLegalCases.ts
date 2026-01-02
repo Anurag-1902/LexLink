@@ -148,3 +148,122 @@ export const useCaseStats = () => {
     },
   });
 };
+
+export const useAddCitation = () => {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: { citing_case_id: string; cited_case_id: string; citation_text?: string }) => {
+      const { data: result, error } = await supabase
+        .from("case_citations")
+        .insert({
+          citing_case_id: data.citing_case_id,
+          cited_case_id: data.cited_case_id,
+          citation_text: data.citation_text,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["case-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph"] });
+      toast({
+        title: "Citation added",
+        description: "The citation relationship has been created.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to add citation",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+};
+
+export const useAddContradiction = () => {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: { 
+      case_a_id: string; 
+      case_b_id: string; 
+      conflict_type: string;
+      confidence_score?: number;
+      description?: string;
+    }) => {
+      const { data: result, error } = await supabase
+        .from("case_contradictions")
+        .insert({
+          case_a_id: data.case_a_id,
+          case_b_id: data.case_b_id,
+          conflict_type: data.conflict_type,
+          confidence_score: data.confidence_score || 0.8,
+          description: data.description,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["case-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph"] });
+      toast({
+        title: "Contradiction added",
+        description: "The contradiction relationship has been created.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to add contradiction",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+};
+
+export const useAddSimilarity = () => {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: { case_a_id: string; case_b_id: string; similarity_score: number }) => {
+      const { data: result, error } = await supabase
+        .from("case_similarities")
+        .insert({
+          case_a_id: data.case_a_id,
+          case_b_id: data.case_b_id,
+          similarity_score: data.similarity_score,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["case-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph"] });
+      toast({
+        title: "Similarity added",
+        description: "The similarity relationship has been created.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to add similarity",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+};

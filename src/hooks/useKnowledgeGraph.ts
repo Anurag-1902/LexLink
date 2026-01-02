@@ -10,7 +10,7 @@ export interface CaseDetails {
   jurisdiction?: string | null;
   citedBy: { id: string; name: string }[];
   cites: { id: string; name: string }[];
-  contradictions: { id: string; name: string; type: string }[];
+  contradictions: { id: string; name: string; type: string; confidence: number; description?: string }[];
   similarities: { id: string; name: string; score: number }[];
 }
 
@@ -37,6 +37,8 @@ export interface GraphEdge {
   type: 'cites' | 'overrules' | 'similar' | 'contradicts' | 'belongs_to';
   weight?: number;
   label?: string;
+  conflictType?: string;
+  description?: string;
 }
 
 export interface KnowledgeGraphData {
@@ -134,7 +136,7 @@ export const useKnowledgeGraph = (limit: number = 50) => {
       const [citationsRes, similaritiesRes, contradictionsRes] = await Promise.all([
         supabase.from('case_citations').select('id, citing_case_id, cited_case_id, citation_text'),
         supabase.from('case_similarities').select('id, case_a_id, case_b_id, similarity_score'),
-        supabase.from('case_contradictions').select('id, case_a_id, case_b_id, conflict_type, confidence_score'),
+        supabase.from('case_contradictions').select('id, case_a_id, case_b_id, conflict_type, confidence_score, description'),
       ]);
 
       const citations = citationsRes.data || [];
@@ -159,7 +161,13 @@ export const useKnowledgeGraph = (limit: number = 50) => {
             caseMap.has(con.case_a_id!) && caseMap.has(con.case_b_id!))
           .map(con => {
             const otherId = con.case_a_id === c.id ? con.case_b_id! : con.case_a_id!;
-            return { id: otherId, name: caseMap.get(otherId)?.name || 'Unknown', type: con.conflict_type };
+            return { 
+              id: otherId, 
+              name: caseMap.get(otherId)?.name || 'Unknown', 
+              type: con.conflict_type,
+              confidence: con.confidence_score || 0,
+              description: con.description || undefined
+            };
           });
         
         const caseSimilarities = similarities
@@ -300,7 +308,7 @@ export const useKnowledgeGraph = (limit: number = 50) => {
         }
       });
 
-      // Add contradiction edges
+      // Add contradiction edges with detailed info
       contradictions.forEach(contra => {
         if (contra.case_a_id && contra.case_b_id &&
             caseIds.has(contra.case_a_id) && caseIds.has(contra.case_b_id)) {
@@ -312,6 +320,8 @@ export const useKnowledgeGraph = (limit: number = 50) => {
             type: isOverrule ? 'overrules' : 'contradicts',
             weight: contra.confidence_score || undefined,
             label: contra.conflict_type,
+            conflictType: contra.conflict_type,
+            description: contra.description || undefined,
           });
         }
       });

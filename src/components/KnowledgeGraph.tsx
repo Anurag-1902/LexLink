@@ -8,16 +8,25 @@ import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { useKnowledgeGraph, GraphNode, GraphEdge } from "@/hooks/useKnowledgeGraph";
-import { useAddCase } from "@/hooks/useLegalCases";
-import { Loader2, ZoomIn, ZoomOut, Maximize2, Info, BookOpen, Scale, AlertTriangle, Link2, Plus, X, FileText, GitBranch, Users } from "lucide-react";
+import { useAddCase, useAddCitation, useAddContradiction, useAddSimilarity } from "@/hooks/useLegalCases";
+import { Loader2, ZoomIn, ZoomOut, Maximize2, Info, BookOpen, Scale, AlertTriangle, Link2, Plus, X, FileText, GitBranch, Users, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Label } from "./ui/label";
 
 const EDGE_STYLES = {
-  cites: { color: "hsl(220, 60%, 60%)", dash: "", arrow: true },
-  overrules: { color: "hsl(0, 80%, 55%)", dash: "", arrow: true },
-  similar: { color: "hsl(140, 60%, 50%)", dash: "6,4", arrow: false },
-  contradicts: { color: "hsl(320, 70%, 55%)", dash: "4,4", arrow: false },
-  belongs_to: { color: "hsl(0, 0%, 60%)", dash: "2,2", arrow: false },
+  cites: { color: "hsl(220, 60%, 60%)", dash: "", arrow: true, width: 2 },
+  overrules: { color: "hsl(0, 80%, 55%)", dash: "", arrow: true, width: 4 },
+  similar: { color: "hsl(140, 60%, 50%)", dash: "6,4", arrow: false, width: 2 },
+  contradicts: { color: "hsl(320, 70%, 55%)", dash: "", arrow: false, width: 3 },
+  belongs_to: { color: "hsl(0, 0%, 60%)", dash: "2,2", arrow: false, width: 1 },
+};
+
+const CONFLICT_TYPES = {
+  'Reasoning Reversal': { icon: '🔄', description: 'The court reversed its legal reasoning on a key issue' },
+  'Temporal Conflict': { icon: '⏰', description: 'Earlier precedent conflicts with later ruling due to changed circumstances' },
+  'Jurisdictional Divergence': { icon: '🗺️', description: 'Different jurisdictions reached opposite conclusions' },
+  'Overruled': { icon: '⚖️', description: 'This case was explicitly overruled by a higher authority' },
+  'Doctrinal Shift': { icon: '📜', description: 'Legal doctrine has evolved, making earlier ruling obsolete' },
 };
 
 const EDGE_LABELS: Record<string, { label: string; icon: typeof Link2 }> = {
@@ -44,6 +53,9 @@ export const KnowledgeGraph = () => {
   const [nodeLimit, setNodeLimit] = useState(30);
   const { data, isLoading, error, refetch } = useKnowledgeGraph(nodeLimit);
   const addCaseMutation = useAddCase();
+  const addCitationMutation = useAddCitation();
+  const addContradictionMutation = useAddContradiction();
+  const addSimilarityMutation = useAddSimilarity();
   
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -54,6 +66,15 @@ export const KnowledgeGraph = () => {
   const [zoom, setZoom] = useState(1);
   const [showDomainConnections, setShowDomainConnections] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isRelationshipDialogOpen, setIsRelationshipDialogOpen] = useState(false);
+  const [relationshipType, setRelationshipType] = useState<'citation' | 'contradiction' | 'similarity'>('citation');
+  const [newRelationship, setNewRelationship] = useState({
+    sourceId: '',
+    targetId: '',
+    conflictType: '',
+    description: '',
+    score: 0.8,
+  });
   const [newCase, setNewCase] = useState({
     name: "",
     court: "",
@@ -127,6 +148,50 @@ export const KnowledgeGraph = () => {
       refetch();
     } catch (err) {
       toast({ title: "Error", description: "Failed to add case", variant: "destructive" });
+    }
+  };
+
+  const handleAddRelationship = async () => {
+    if (!newRelationship.sourceId || !newRelationship.targetId) {
+      toast({ title: "Error", description: "Please select both cases", variant: "destructive" });
+      return;
+    }
+    if (newRelationship.sourceId === newRelationship.targetId) {
+      toast({ title: "Error", description: "Cannot create relationship with same case", variant: "destructive" });
+      return;
+    }
+    
+    try {
+      if (relationshipType === 'citation') {
+        await addCitationMutation.mutateAsync({
+          citing_case_id: newRelationship.sourceId,
+          cited_case_id: newRelationship.targetId,
+        });
+      } else if (relationshipType === 'contradiction') {
+        if (!newRelationship.conflictType) {
+          toast({ title: "Error", description: "Please select a conflict type", variant: "destructive" });
+          return;
+        }
+        await addContradictionMutation.mutateAsync({
+          case_a_id: newRelationship.sourceId,
+          case_b_id: newRelationship.targetId,
+          conflict_type: newRelationship.conflictType,
+          confidence_score: newRelationship.score,
+          description: newRelationship.description || undefined,
+        });
+      } else {
+        await addSimilarityMutation.mutateAsync({
+          case_a_id: newRelationship.sourceId,
+          case_b_id: newRelationship.targetId,
+          similarity_score: newRelationship.score,
+        });
+      }
+      
+      setNewRelationship({ sourceId: '', targetId: '', conflictType: '', description: '', score: 0.8 });
+      setIsRelationshipDialogOpen(false);
+      refetch();
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to add relationship", variant: "destructive" });
     }
   };
 
@@ -236,6 +301,155 @@ export const KnowledgeGraph = () => {
                 </div>
               </DialogContent>
             </Dialog>
+            
+            {/* Add Relationship Dialog */}
+            <Dialog open={isRelationshipDialogOpen} onOpenChange={setIsRelationshipDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline" className="gap-1">
+                  <Link2 className="h-4 w-4" /> Add Relationship
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Create Case Relationship</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-2 block">Relationship Type</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant={relationshipType === 'citation' ? 'default' : 'outline'}
+                        onClick={() => setRelationshipType('citation')}
+                        className="flex-1"
+                      >
+                        <BookOpen className="h-3 w-3 mr-1" /> Citation
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={relationshipType === 'contradiction' ? 'default' : 'outline'}
+                        onClick={() => setRelationshipType('contradiction')}
+                        className="flex-1"
+                        style={relationshipType === 'contradiction' ? { background: EDGE_STYLES.contradicts.color } : {}}
+                      >
+                        <AlertTriangle className="h-3 w-3 mr-1" /> Contradiction
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={relationshipType === 'similarity' ? 'default' : 'outline'}
+                        onClick={() => setRelationshipType('similarity')}
+                        className="flex-1"
+                        style={relationshipType === 'similarity' ? { background: EDGE_STYLES.similar.color } : {}}
+                      >
+                        <Users className="h-3 w-3 mr-1" /> Similar
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <Label className="text-xs text-muted-foreground mb-1 block">
+                        {relationshipType === 'citation' ? 'Citing Case' : 'Case A'}
+                      </Label>
+                      <Select 
+                        value={newRelationship.sourceId} 
+                        onValueChange={(v) => setNewRelationship({ ...newRelationship, sourceId: v })}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select case" /></SelectTrigger>
+                        <SelectContent>
+                          {caseNodes.map(c => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.caseDetails?.name || c.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground mt-5" />
+                    <div className="flex-1">
+                      <Label className="text-xs text-muted-foreground mb-1 block">
+                        {relationshipType === 'citation' ? 'Cited Case' : 'Case B'}
+                      </Label>
+                      <Select 
+                        value={newRelationship.targetId} 
+                        onValueChange={(v) => setNewRelationship({ ...newRelationship, targetId: v })}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select case" /></SelectTrigger>
+                        <SelectContent>
+                          {caseNodes.map(c => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.caseDetails?.name || c.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  
+                  {relationshipType === 'contradiction' && (
+                    <>
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Conflict Type</Label>
+                        <Select 
+                          value={newRelationship.conflictType} 
+                          onValueChange={(v) => setNewRelationship({ ...newRelationship, conflictType: v })}
+                        >
+                          <SelectTrigger><SelectValue placeholder="Select conflict type" /></SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(CONFLICT_TYPES).map(([type, { icon, description }]) => (
+                              <SelectItem key={type} value={type}>
+                                <div className="flex items-center gap-2">
+                                  <span>{icon}</span>
+                                  <span>{type}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {newRelationship.conflictType && CONFLICT_TYPES[newRelationship.conflictType as keyof typeof CONFLICT_TYPES] && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {CONFLICT_TYPES[newRelationship.conflictType as keyof typeof CONFLICT_TYPES].description}
+                          </p>
+                        )}
+                      </div>
+                      <Textarea
+                        placeholder="Describe the contradiction..."
+                        value={newRelationship.description}
+                        onChange={(e) => setNewRelationship({ ...newRelationship, description: e.target.value })}
+                        rows={2}
+                      />
+                    </>
+                  )}
+                  
+                  {(relationshipType === 'contradiction' || relationshipType === 'similarity') && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">
+                        {relationshipType === 'contradiction' ? 'Confidence Score' : 'Similarity Score'}: {Math.round(newRelationship.score * 100)}%
+                      </Label>
+                      <Slider
+                        value={[newRelationship.score]}
+                        onValueChange={([v]) => setNewRelationship({ ...newRelationship, score: v })}
+                        min={0.5}
+                        max={1}
+                        step={0.05}
+                      />
+                    </div>
+                  )}
+                  
+                  <Button 
+                    onClick={handleAddRelationship} 
+                    disabled={addCitationMutation.isPending || addContradictionMutation.isPending || addSimilarityMutation.isPending} 
+                    className="w-full"
+                  >
+                    {(addCitationMutation.isPending || addContradictionMutation.isPending || addSimilarityMutation.isPending) && (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    )}
+                    Create {relationshipType.charAt(0).toUpperCase() + relationshipType.slice(1)}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+            
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span>Cases:</span>
               <Slider
@@ -364,59 +578,109 @@ export const KnowledgeGraph = () => {
               </defs>
 
               {/* Edges */}
-              {visibleEdges.map(edge => {
-                const sourceNode = getNodeById(edge.source);
-                const targetNode = getNodeById(edge.target);
-                if (!sourceNode || !targetNode) return null;
+                {visibleEdges.map(edge => {
+                  const sourceNode = getNodeById(edge.source);
+                  const targetNode = getNodeById(edge.target);
+                  if (!sourceNode || !targetNode) return null;
 
-                const isHovered = hoveredEdge === edge.id;
-                const style = EDGE_STYLES[edge.type];
-                const isRelationship = edge.type !== 'belongs_to';
+                  const isHovered = hoveredEdge === edge.id;
+                  const style = EDGE_STYLES[edge.type];
+                  const isRelationship = edge.type !== 'belongs_to';
+                  const isContradiction = edge.type === 'contradicts' || edge.type === 'overrules';
+                  
+                  // Calculate midpoint for labels
+                  const midX = (sourceNode.x + targetNode.x) / 2;
+                  const midY = (sourceNode.y + targetNode.y) / 2;
 
-                return (
-                  <g key={edge.id}>
-                    <line
-                      x1={sourceNode.x}
-                      y1={sourceNode.y}
-                      x2={targetNode.x}
-                      y2={targetNode.y}
-                      stroke={style.color}
-                      strokeWidth={isHovered ? 3 : isRelationship ? 2 : 1}
-                      strokeOpacity={isHovered ? 1 : isRelationship ? 0.7 : 0.2}
-                      strokeDasharray={style.dash}
-                      markerEnd={style.arrow ? `url(#arrow-${edge.type})` : undefined}
-                      onMouseEnter={() => setHoveredEdge(edge.id)}
-                      onMouseLeave={() => setHoveredEdge(null)}
-                      style={{ cursor: 'pointer', transition: 'all 0.2s' }}
-                    />
-                    {isHovered && isRelationship && (
-                      <g>
-                        <rect
-                          x={(sourceNode.x + targetNode.x) / 2 - 40}
-                          y={(sourceNode.y + targetNode.y) / 2 - 12}
-                          width="80"
-                          height="20"
-                          rx="4"
-                          fill="hsl(var(--background))"
+                  return (
+                    <g key={edge.id}>
+                      {/* Glow effect for contradictions */}
+                      {isContradiction && (
+                        <line
+                          x1={sourceNode.x}
+                          y1={sourceNode.y}
+                          x2={targetNode.x}
+                          y2={targetNode.y}
                           stroke={style.color}
-                          strokeWidth="1"
+                          strokeWidth={isHovered ? 10 : 6}
+                          strokeOpacity={0.2}
+                          className="animate-pulse"
                         />
-                        <text
-                          x={(sourceNode.x + targetNode.x) / 2}
-                          y={(sourceNode.y + targetNode.y) / 2 + 2}
-                          textAnchor="middle"
-                          fontSize="10"
-                          fill={style.color}
-                          fontWeight="600"
-                        >
-                          {EDGE_LABELS[edge.type]?.label}
-                          {edge.weight && ` ${(edge.weight * 100).toFixed(0)}%`}
-                        </text>
-                      </g>
-                    )}
-                  </g>
-                );
-              })}
+                      )}
+                      <line
+                        x1={sourceNode.x}
+                        y1={sourceNode.y}
+                        x2={targetNode.x}
+                        y2={targetNode.y}
+                        stroke={style.color}
+                        strokeWidth={isHovered ? style.width + 2 : style.width}
+                        strokeOpacity={isHovered ? 1 : isRelationship ? 0.8 : 0.2}
+                        strokeDasharray={style.dash}
+                        markerEnd={style.arrow ? `url(#arrow-${edge.type})` : undefined}
+                        onMouseEnter={() => setHoveredEdge(edge.id)}
+                        onMouseLeave={() => setHoveredEdge(null)}
+                        style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+                      />
+                      {/* Contradiction type indicator */}
+                      {isContradiction && !isHovered && (
+                        <g>
+                          <circle
+                            cx={midX}
+                            cy={midY}
+                            r={10}
+                            fill="hsl(var(--background))"
+                            stroke={style.color}
+                            strokeWidth="2"
+                          />
+                          <text
+                            x={midX}
+                            y={midY + 4}
+                            textAnchor="middle"
+                            fontSize="12"
+                          >
+                            {edge.type === 'overrules' ? '⚖️' : '⚠️'}
+                          </text>
+                        </g>
+                      )}
+                      {isHovered && isRelationship && (
+                        <g>
+                          <rect
+                            x={midX - 60}
+                            y={midY - 15}
+                            width="120"
+                            height={isContradiction ? "40" : "26"}
+                            rx="4"
+                            fill="hsl(var(--background))"
+                            stroke={style.color}
+                            strokeWidth="2"
+                            filter="url(#shadow)"
+                          />
+                          <text
+                            x={midX}
+                            y={midY + (isContradiction ? -3 : 2)}
+                            textAnchor="middle"
+                            fontSize="11"
+                            fill={style.color}
+                            fontWeight="600"
+                          >
+                            {edge.conflictType || EDGE_LABELS[edge.type]?.label}
+                          </text>
+                          {isContradiction && edge.weight && (
+                            <text
+                              x={midX}
+                              y={midY + 14}
+                              textAnchor="middle"
+                              fontSize="9"
+                              fill="hsl(var(--muted-foreground))"
+                            >
+                              {Math.round(edge.weight * 100)}% confidence
+                            </text>
+                          )}
+                        </g>
+                      )}
+                    </g>
+                  );
+                })}
 
               {/* Nodes */}
               {nodes.map(node => {
@@ -655,27 +919,37 @@ export const KnowledgeGraph = () => {
                   </div>
                 </div>
 
-                {/* Contradictions */}
-                <div className="p-3 rounded bg-background/60 border border-border/30">
+                {/* Contradictions - Enhanced */}
+                <div className="p-3 rounded bg-background/60 border-2 border-pink-500/30">
                   <div className="flex items-center gap-2 mb-2 text-sm font-medium" style={{ color: EDGE_STYLES.contradicts.color }}>
                     <AlertTriangle className="w-4 h-4" />
                     Contradictions ({selectedNode.caseDetails.contradictions.length})
                   </div>
-                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
                     {selectedNode.caseDetails.contradictions.length > 0 ? (
                       selectedNode.caseDetails.contradictions.map(c => (
-                        <div key={c.id} className="text-xs text-muted-foreground truncate hover:text-foreground cursor-pointer"
+                        <div key={c.id} className="p-2 rounded bg-pink-500/10 border border-pink-500/20 hover:bg-pink-500/20 cursor-pointer transition-colors"
                           onClick={() => {
                             const node = nodes.find(n => n.id === c.id);
                             if (node) setSelectedNode(node);
                           }}
                         >
-                          ⚠ {c.name.length > 25 ? c.name.substring(0, 23) + '...' : c.name}
-                          <span className="text-destructive/70 ml-1">({c.type})</span>
+                          <div className="text-xs font-medium text-foreground truncate">
+                            ⚠️ {c.name.length > 30 ? c.name.substring(0, 28) + '...' : c.name}
+                          </div>
+                          <div className="flex items-center justify-between mt-1">
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-400">{c.type}</span>
+                            <span className="text-xs text-muted-foreground">{Math.round(c.confidence * 100)}% conf.</span>
+                          </div>
+                          {c.description && (
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{c.description}</p>
+                          )}
                         </div>
                       ))
                     ) : (
-                      <div className="text-xs text-muted-foreground/50 italic">None</div>
+                      <div className="text-xs text-muted-foreground/50 italic p-2 text-center">
+                        No contradictions found
+                      </div>
                     )}
                   </div>
                 </div>

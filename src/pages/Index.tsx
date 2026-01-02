@@ -195,20 +195,25 @@ const Index = () => {
       )}
       
       <main className="max-w-7xl mx-auto px-8 py-12">
+        {/* Featured Analysis and Metrics Row */}
         <div className="grid lg:grid-cols-3 gap-8 mb-8">
           <div className="lg:col-span-2">
             <FeaturedAnalysis case={featuredCase} />
           </div>
-          <div className="space-y-6">
+          <div>
             <SystemMetrics metrics={metrics} />
-            <CaseManager />
-            <SyntheticDataGenerator />
           </div>
         </div>
         
-        {/* Knowledge Graph Section - Now Dynamic */}
-        <div className="mt-8">
-          <KnowledgeGraph />
+        {/* Knowledge Graph beside Case Manager and Dataset Generator */}
+        <div className="grid lg:grid-cols-2 gap-8">
+          <div className="space-y-6">
+            <CaseManager />
+            <SyntheticDataGenerator />
+          </div>
+          <div>
+            <KnowledgeGraph />
+          </div>
         </div>
       </main>
     </div>

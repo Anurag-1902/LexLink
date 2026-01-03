@@ -8,6 +8,8 @@ export interface CaseDetails {
   summary?: string | null;
   decision_date?: string | null;
   jurisdiction?: string | null;
+  fullText?: string | null;
+  headnotes?: string | null;
   citedBy: { id: string; name: string }[];
   cites: { id: string; name: string }[];
   contradictions: { id: string; name: string; type: string; confidence: number; description?: string }[];
@@ -123,7 +125,7 @@ export const useKnowledgeGraph = (limit: number = 50) => {
       // Fetch cases with summary for domain detection
       const { data: cases, error: casesError } = await supabase
         .from('legal_cases')
-        .select('id, name, name_abbreviation, court, jurisdiction, decision_date, summary')
+        .select('id, name, name_abbreviation, court, jurisdiction, decision_date, summary, full_text, headnotes')
         .order('decision_date', { ascending: false })
         .limit(limit);
 
@@ -186,6 +188,8 @@ export const useKnowledgeGraph = (limit: number = 50) => {
           summary: c.summary,
           decision_date: c.decision_date,
           jurisdiction: c.jurisdiction,
+          fullText: c.full_text,
+          headnotes: c.headnotes,
           citedBy,
           cites,
           contradictions: caseContradictions,

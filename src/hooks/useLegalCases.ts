@@ -40,6 +40,50 @@ export const useLegalCases = (limit = 10) => {
   });
 };
 
+// Hook to summarize a case using AI
+export const useSummarizeCase = () => {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (caseData: {
+      caseId: string;
+      caseName: string;
+      court: string;
+      jurisdiction?: string;
+      fullText?: string;
+      headnotes?: string;
+    }) => {
+      const { data, error } = await supabase.functions.invoke('summarize-case', {
+        body: {
+          caseId: caseData.caseId,
+          caseName: caseData.caseName,
+          court: caseData.court,
+          jurisdiction: caseData.jurisdiction,
+          fullText: caseData.fullText,
+          headnotes: caseData.headnotes,
+        },
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["legal-cases"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph"] });
+    },
+    onError: (error: Error) => {
+      console.error("Summarization error:", error);
+      toast({
+        title: "Summarization failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+};
+
 export const useAddCase = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -53,6 +97,8 @@ export const useAddCase = () => {
       decision_date?: string;
       summary?: string;
       docket_number?: string;
+      full_text?: string;
+      headnotes?: string;
     }) => {
       const { data, error } = await supabase
         .from("legal_cases")
@@ -64,6 +110,8 @@ export const useAddCase = () => {
           decision_date: caseData.decision_date,
           summary: caseData.summary,
           docket_number: caseData.docket_number,
+          full_text: caseData.full_text,
+          headnotes: caseData.headnotes,
         })
         .select()
         .single();

@@ -8,7 +8,7 @@ import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { useKnowledgeGraph, GraphNode, GraphEdge } from "@/hooks/useKnowledgeGraph";
-import { useAddCase, useAddCitation, useAddContradiction, useAddSimilarity } from "@/hooks/useLegalCases";
+import { useAddCase, useAddCitation, useAddContradiction, useAddSimilarity, useSummarizeCase } from "@/hooks/useLegalCases";
 import { Loader2, ZoomIn, ZoomOut, Maximize2, Info, BookOpen, Scale, AlertTriangle, Link2, Plus, X, FileText, GitBranch, Users, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "./ui/label";
@@ -56,6 +56,7 @@ export const KnowledgeGraph = () => {
   const addCitationMutation = useAddCitation();
   const addContradictionMutation = useAddContradiction();
   const addSimilarityMutation = useAddSimilarity();
+  const summarizeMutation = useSummarizeCase();
   
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -67,6 +68,7 @@ export const KnowledgeGraph = () => {
   const [showDomainConnections, setShowDomainConnections] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isRelationshipDialogOpen, setIsRelationshipDialogOpen] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const [relationshipType, setRelationshipType] = useState<'citation' | 'contradiction' | 'similarity'>('citation');
   const [newRelationship, setNewRelationship] = useState({
     sourceId: '',
@@ -132,7 +134,8 @@ export const KnowledgeGraph = () => {
     }
     
     try {
-      await addCaseMutation.mutateAsync({
+      setIsSummarizing(true);
+      const addedCase = await addCaseMutation.mutateAsync({
         case_id: `GRAPH-${Date.now()}`,
         name: newCase.name,
         court: newCase.court,
@@ -142,12 +145,31 @@ export const KnowledgeGraph = () => {
         summary: newCase.summary || undefined,
       });
       
+      // Generate AI summary if no manual summary was provided
+      if (!newCase.summary && addedCase?.id) {
+        toast({ title: "Generating AI Summary", description: "Creating an intelligent case summary..." });
+        try {
+          const result = await summarizeMutation.mutateAsync({
+            caseId: addedCase.id,
+            caseName: newCase.name,
+            court: newCase.court,
+            jurisdiction: newCase.jurisdiction || undefined,
+          });
+          toast({ title: "Summary Generated", description: "AI summary has been added to the case." });
+        } catch (sumError) {
+          console.error("Summarization failed:", sumError);
+          // Case was added successfully, just without AI summary
+        }
+      }
+      
       toast({ title: "Success", description: "Case added to graph" });
       setNewCase({ name: "", court: "", jurisdiction: "", decision_date: "", docket_number: "", summary: "" });
       setIsAddDialogOpen(false);
       refetch();
     } catch (err) {
       toast({ title: "Error", description: "Failed to add case", variant: "destructive" });
+    } finally {
+      setIsSummarizing(false);
     }
   };
 
@@ -289,14 +311,17 @@ export const KnowledgeGraph = () => {
                     onChange={(e) => setNewCase({ ...newCase, decision_date: e.target.value })}
                   />
                   <Textarea
-                    placeholder="Case Summary"
+                    placeholder="Case Summary (leave empty for AI-generated summary)"
                     value={newCase.summary}
                     onChange={(e) => setNewCase({ ...newCase, summary: e.target.value })}
                     rows={3}
                   />
-                  <Button onClick={handleAddCase} disabled={addCaseMutation.isPending} className="w-full">
-                    {addCaseMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Add to Graph
+                  <p className="text-xs text-muted-foreground">
+                    💡 Leave summary empty to auto-generate with AI
+                  </p>
+                  <Button onClick={handleAddCase} disabled={addCaseMutation.isPending || isSummarizing} className="w-full">
+                    {(addCaseMutation.isPending || isSummarizing) ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {isSummarizing ? "Generating Summary..." : "Add to Graph"}
                   </Button>
                 </div>
               </DialogContent>
@@ -845,7 +870,7 @@ export const KnowledgeGraph = () => {
                 </div>
 
                 {/* Summary Section */}
-                {(selectedNode.summary || selectedNode.caseDetails?.summary) && (
+                {(selectedNode.summary || selectedNode.caseDetails?.summary) ? (
                   <div className="mt-4 p-3 rounded bg-background/60 border border-border/30">
                     <div className="flex items-center gap-2 mb-2 text-sm font-medium">
                       <FileText className="w-4 h-4 text-primary" />
@@ -854,6 +879,45 @@ export const KnowledgeGraph = () => {
                     <p className="text-sm text-muted-foreground leading-relaxed">
                       {selectedNode.summary || selectedNode.caseDetails?.summary}
                     </p>
+                  </div>
+                ) : selectedNode.type === 'case' && (
+                  <div className="mt-4 p-3 rounded bg-background/60 border border-border/30">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                        <FileText className="w-4 h-4" />
+                        No summary available
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        disabled={summarizeMutation.isPending}
+                        onClick={async () => {
+                          if (selectedNode.caseDetails) {
+                            toast({ title: "Generating Summary", description: "AI is analyzing the case..." });
+                            try {
+                              await summarizeMutation.mutateAsync({
+                                caseId: selectedNode.id,
+                                caseName: selectedNode.caseDetails.name,
+                                court: selectedNode.caseDetails.court,
+                                jurisdiction: selectedNode.caseDetails.jurisdiction,
+                                fullText: selectedNode.caseDetails.fullText,
+                                headnotes: selectedNode.caseDetails.headnotes,
+                              });
+                              toast({ title: "Success", description: "AI summary generated!" });
+                              refetch();
+                            } catch (e) {
+                              // Error handled by mutation
+                            }
+                          }
+                        }}
+                      >
+                        {summarizeMutation.isPending ? (
+                          <><Loader2 className="h-3 w-3 animate-spin mr-1" /> Generating...</>
+                        ) : (
+                          <>✨ Generate AI Summary</>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>

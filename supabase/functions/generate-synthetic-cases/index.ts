@@ -291,16 +291,22 @@ Deno.serve(async (req) => {
       const { data, error } = await supabase
         .from("legal_cases")
         .upsert(batch, { onConflict: "case_id" })
-        .select();
+        .select("id, case_id, name_abbreviation, citations, metadata");
 
       if (error) {
         console.error(`Batch ${i}-${batchEnd} error:`, error);
         errors += batch.length;
-      } else {
-        inserted += batch.length;
-        allCases.push(...batch);
+      } else if (data) {
+        inserted += data.length;
+        allCases.push(...data);
         console.log(`Inserted batch ${i}-${batchEnd} (${inserted}/${targetCount})`);
       }
+    }
+
+    // Build a map from case_id to database id for relationship lookups
+    const caseIdToDbId: Record<string, string> = {};
+    for (const c of allCases) {
+      caseIdToDbId[c.case_id] = c.id;
     }
 
     // Generate case citations relationships
@@ -308,38 +314,59 @@ Deno.serve(async (req) => {
     const citationRecords: any[] = [];
     
     for (const legalCase of allCases) {
-      const caseCitations = legalCase.citations?.filter((c: any) => c.case_id) || [];
+      const caseCitations = (legalCase.citations as any[])?.filter((c: any) => c.case_id) || [];
       for (const citation of caseCitations) {
-        const citedCase = allCases.find(c => c.case_id === citation.case_id);
-        if (citedCase) {
+        const citedDbId = caseIdToDbId[citation.case_id];
+        if (citedDbId && legalCase.id !== citedDbId) {
           citationRecords.push({
             citing_case_id: legalCase.id,
-            cited_case_id: citedCase.id,
+            cited_case_id: citedDbId,
             citation_text: citation.citation,
           });
         }
       }
     }
 
+    // Insert citations in batches
+    let insertedCitations = 0;
+    for (let i = 0; i < citationRecords.length; i += batchSize) {
+      const batch = citationRecords.slice(i, i + batchSize);
+      const { error } = await supabase.from("case_citations").insert(batch);
+      if (!error) insertedCitations += batch.length;
+      else console.error("Citation insert error:", error);
+    }
+    console.log(`Inserted ${insertedCitations} citations`);
+
     // Generate some contradictions (cases that overrule each other)
     console.log("Generating contradiction relationships...");
     const contradictionRecords: any[] = [];
     const overrulingCases = allCases.filter(c => 
-      c.citations?.some((cit: any) => cit.type === "overruling")
+      (c.citations as any[])?.some((cit: any) => cit.type === "overruling")
     );
     
     for (const legalCase of overrulingCases.slice(0, 50)) {
-      const overruledCitation = legalCase.citations?.find((c: any) => c.type === "overruling");
-      if (overruledCitation?.case_id) {
+      const overruledCitation = (legalCase.citations as any[])?.find((c: any) => c.type === "overruling");
+      const citedDbId = overruledCitation?.case_id ? caseIdToDbId[overruledCitation.case_id] : null;
+      if (citedDbId && legalCase.id !== citedDbId) {
         contradictionRecords.push({
-          case_a_id: legalCase.case_id,
-          case_b_id: overruledCitation.case_id,
+          case_a_id: legalCase.id,
+          case_b_id: citedDbId,
           conflict_type: randomElement(["temporal", "jurisdictional", "doctrinal"]),
           confidence_score: Math.random() * 0.3 + 0.7,
-          description: `${legalCase.name_abbreviation} overrules prior holding in ${overruledCitation.case_id}`,
+          description: `${legalCase.name_abbreviation} overrules prior holding`,
         });
       }
     }
+
+    // Insert contradictions
+    let insertedContradictions = 0;
+    for (let i = 0; i < contradictionRecords.length; i += batchSize) {
+      const batch = contradictionRecords.slice(i, i + batchSize);
+      const { error } = await supabase.from("case_contradictions").insert(batch);
+      if (!error) insertedContradictions += batch.length;
+      else console.error("Contradiction insert error:", error);
+    }
+    console.log(`Inserted ${insertedContradictions} contradictions`);
 
     // Generate similarity relationships
     console.log("Generating similarity relationships...");
@@ -348,33 +375,43 @@ Deno.serve(async (req) => {
     // Group cases by domain and create similarity relationships
     const domainGroups: Record<string, any[]> = {};
     for (const legalCase of allCases) {
-      const domain = legalCase.metadata?.domain || "Unknown";
+      const domain = (legalCase.metadata as any)?.domain || "Unknown";
       if (!domainGroups[domain]) domainGroups[domain] = [];
       domainGroups[domain].push(legalCase);
     }
     
-    for (const [domain, cases] of Object.entries(domainGroups)) {
+    for (const [_domain, cases] of Object.entries(domainGroups)) {
       // Create similarities within same domain
       for (let i = 0; i < Math.min(cases.length, 20); i++) {
         for (let j = i + 1; j < Math.min(i + 5, cases.length); j++) {
           similarityRecords.push({
-            case_a_id: cases[i].case_id,
-            case_b_id: cases[j].case_id,
+            case_a_id: cases[i].id,
+            case_b_id: cases[j].id,
             similarity_score: Math.random() * 0.3 + 0.6,
           });
         }
       }
     }
 
+    // Insert similarities
+    let insertedSimilarities = 0;
+    for (let i = 0; i < similarityRecords.length; i += batchSize) {
+      const batch = similarityRecords.slice(i, i + batchSize);
+      const { error } = await supabase.from("case_similarities").insert(batch);
+      if (!error) insertedSimilarities += batch.length;
+      else console.error("Similarity insert error:", error);
+    }
+    console.log(`Inserted ${insertedSimilarities} similarities`);
+
     return new Response(
       JSON.stringify({
         success: true,
         generated: inserted,
         errors,
-        citations: citationRecords.length,
-        contradictions: contradictionRecords.length,
-        similarities: similarityRecords.length,
-        message: `Successfully generated ${inserted} synthetic legal cases`,
+        citations: insertedCitations,
+        contradictions: insertedContradictions,
+        similarities: insertedSimilarities,
+        message: `Successfully generated ${inserted} synthetic legal cases with ${insertedCitations} citations, ${insertedContradictions} contradictions, and ${insertedSimilarities} similarities`,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

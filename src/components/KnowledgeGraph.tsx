@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -12,6 +12,7 @@ import { useAddCase, useAddCitation, useAddContradiction, useAddSimilarity, useS
 import { Loader2, ZoomIn, ZoomOut, Maximize2, Info, BookOpen, Scale, AlertTriangle, Link2, Plus, X, FileText, GitBranch, Users, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "./ui/label";
+import { GraphFiltersComponent, GraphFilters } from "./GraphFilters";
 
 const EDGE_STYLES = {
   cites: { color: "hsl(220, 60%, 60%)", dash: "", arrow: true, width: 2 },
@@ -70,6 +71,16 @@ export const KnowledgeGraph = () => {
   const [isRelationshipDialogOpen, setIsRelationshipDialogOpen] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [relationshipType, setRelationshipType] = useState<'citation' | 'contradiction' | 'similarity'>('citation');
+  
+  // Filters state
+  const [filters, setFilters] = useState<GraphFilters>({
+    searchQuery: "",
+    courts: [],
+    jurisdictions: [],
+    dateRange: { start: "", end: "" },
+    relationshipTypes: [],
+  });
+  
   const [newRelationship, setNewRelationship] = useState({
     sourceId: '',
     targetId: '',
@@ -217,14 +228,92 @@ export const KnowledgeGraph = () => {
     }
   };
 
-  // Filter edges based on visibility settings
-  const visibleEdges = (data?.edges || []).filter(e => 
-    showDomainConnections || e.type !== 'belongs_to'
-  );
+  // Extract available courts and jurisdictions from data
+  const availableCourts = useMemo(() => {
+    const courts = new Set<string>();
+    nodes.forEach((n) => {
+      if (n.type === "case" && n.caseDetails?.court) {
+        courts.add(n.caseDetails.court);
+      }
+    });
+    return Array.from(courts);
+  }, [nodes]);
+
+  const availableJurisdictions = useMemo(() => {
+    const jurisdictions = new Set<string>();
+    nodes.forEach((n) => {
+      if (n.type === "case" && n.caseDetails?.jurisdiction) {
+        jurisdictions.add(n.caseDetails.jurisdiction);
+      }
+    });
+    return Array.from(jurisdictions);
+  }, [nodes]);
+
+  // Filter nodes based on search and filters
+  const filteredNodes = useMemo(() => {
+    return nodes.filter((node) => {
+      if (node.type !== "case") return showDomainConnections;
+
+      const caseDetails = node.caseDetails;
+      if (!caseDetails) return false;
+
+      // Search query filter
+      if (filters.searchQuery) {
+        const query = filters.searchQuery.toLowerCase();
+        const matchesSearch =
+          caseDetails.name?.toLowerCase().includes(query) ||
+          caseDetails.summary?.toLowerCase().includes(query) ||
+          caseDetails.court?.toLowerCase().includes(query) ||
+          caseDetails.jurisdiction?.toLowerCase().includes(query);
+        if (!matchesSearch) return false;
+      }
+
+      // Court filter
+      if (filters.courts.length > 0 && caseDetails.court) {
+        if (!filters.courts.includes(caseDetails.court)) return false;
+      }
+
+      // Jurisdiction filter
+      if (filters.jurisdictions.length > 0 && caseDetails.jurisdiction) {
+        if (!filters.jurisdictions.includes(caseDetails.jurisdiction)) return false;
+      }
+
+      // Date range filter
+      if (filters.dateRange.start || filters.dateRange.end) {
+        const caseDate = caseDetails.decision_date ? new Date(caseDetails.decision_date) : null;
+        if (!caseDate) return false;
+        if (filters.dateRange.start && caseDate < new Date(filters.dateRange.start)) return false;
+        if (filters.dateRange.end && caseDate > new Date(filters.dateRange.end)) return false;
+      }
+
+      return true;
+    });
+  }, [nodes, filters, showDomainConnections]);
+
+  // Get filtered node IDs for edge filtering
+  const filteredNodeIds = useMemo(() => new Set(filteredNodes.map((n) => n.id)), [filteredNodes]);
+
+  // Filter edges based on visibility settings and relationship type filters
+  const visibleEdges = useMemo(() => {
+    return (data?.edges || []).filter((e) => {
+      // Hide domain connections unless shown
+      if (e.type === "belongs_to" && !showDomainConnections) return false;
+
+      // Both source and target must be in filtered nodes
+      if (!filteredNodeIds.has(e.source) || !filteredNodeIds.has(e.target)) return false;
+
+      // Relationship type filter
+      if (filters.relationshipTypes.length > 0 && e.type !== "belongs_to") {
+        if (!filters.relationshipTypes.includes(e.type)) return false;
+      }
+
+      return true;
+    });
+  }, [data?.edges, filteredNodeIds, showDomainConnections, filters.relationshipTypes]);
 
   // Stats for display
-  const caseNodes = nodes.filter(n => n.type === 'case');
-  const domainNodes = nodes.filter(n => n.type === 'domain');
+  const caseNodes = filteredNodes.filter(n => n.type === 'case');
+  const domainNodes = filteredNodes.filter(n => n.type === 'domain');
   const citationEdges = visibleEdges.filter(e => e.type === 'cites');
   const similarEdges = visibleEdges.filter(e => e.type === 'similar');
   const contradictEdges = visibleEdges.filter(e => e.type === 'contradicts' || e.type === 'overrules');
@@ -548,6 +637,21 @@ export const KnowledgeGraph = () => {
             </div>
           </div>
         </div>
+        
+        {/* Filters and Search */}
+        <div className="mt-3">
+          <GraphFiltersComponent
+            filters={filters}
+            onFiltersChange={setFilters}
+            availableCourts={availableCourts}
+            availableJurisdictions={availableJurisdictions}
+          />
+          {(filters.searchQuery || filters.courts.length > 0 || filters.jurisdictions.length > 0 || filters.relationshipTypes.length > 0 || filters.dateRange.start || filters.dateRange.end) && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Showing {caseNodes.length} case{caseNodes.length !== 1 ? 's' : ''} • {citationEdges.length} citation{citationEdges.length !== 1 ? 's' : ''} • {similarEdges.length} similar • {contradictEdges.length} contradiction{contradictEdges.length !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
       </CardHeader>
 
       <CardContent>
@@ -559,11 +663,11 @@ export const KnowledgeGraph = () => {
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
         >
-          {nodes.length === 0 ? (
+          {filteredNodes.length === 0 ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
               <Info className="h-12 w-12 mb-4 opacity-50" />
-              <p className="text-lg font-medium">No cases in database</p>
-              <p className="text-sm">Generate synthetic cases or add cases manually</p>
+              <p className="text-lg font-medium">{nodes.length === 0 ? "No cases in database" : "No matching cases"}</p>
+              <p className="text-sm">{nodes.length === 0 ? "Generate synthetic cases or add cases manually" : "Try adjusting your filters"}</p>
             </div>
           ) : (
             <svg
@@ -708,7 +812,7 @@ export const KnowledgeGraph = () => {
                 })}
 
               {/* Nodes */}
-              {nodes.map(node => {
+              {filteredNodes.map(node => {
                 const isSelected = selectedNode?.id === node.id;
                 const isHovered = hoveredNode === node.id;
                 const isDomain = node.type === 'domain';

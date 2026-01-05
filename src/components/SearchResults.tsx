@@ -1,8 +1,13 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
-import { FileText, Scale, AlertTriangle } from "lucide-react";
+import { Button } from "./ui/button";
+import { FileText, Scale, AlertTriangle, Sparkles, Loader2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface SearchResult {
+  id?: string;
   title: string;
   court: string;
   date: string;
@@ -20,6 +25,47 @@ interface SearchResultsProps {
 }
 
 export const SearchResults = ({ results, query, onClose }: SearchResultsProps) => {
+  const [aiSummaries, setAiSummaries] = useState<Record<number, string>>({});
+  const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
+
+  const generateAISummary = async (result: SearchResult, index: number) => {
+    setLoadingIndex(index);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('summarize-case', {
+        body: {
+          caseId: result.id || `search-result-${index}`,
+          caseName: result.title,
+          court: result.court,
+          jurisdiction: null,
+          fullText: result.summary, // Use existing summary as context
+          headnotes: result.tags.join(", ")
+        }
+      });
+
+      if (error) {
+        if (error.message?.includes("429")) {
+          toast.error("Rate limit exceeded. Please try again later.");
+        } else if (error.message?.includes("402")) {
+          toast.error("AI usage limit reached. Please add credits.");
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      if (data?.summary) {
+        setAiSummaries(prev => ({ ...prev, [index]: data.summary }));
+        toast.success("AI summary generated!");
+      }
+    } catch (error) {
+      console.error("Error generating summary:", error);
+      toast.error("Failed to generate AI summary");
+    } finally {
+      setLoadingIndex(null);
+    }
+  };
+
   if (results.length === 0) return null;
 
   return (
@@ -65,6 +111,40 @@ export const SearchResults = ({ results, query, onClose }: SearchResultsProps) =
                 <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
                   {result.summary}
                 </p>
+                
+                {/* AI Summary Section */}
+                {aiSummaries[index] ? (
+                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sparkles className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium text-primary">AI-Generated Summary</span>
+                    </div>
+                    <p className="text-sm text-foreground leading-relaxed">
+                      {aiSummaries[index]}
+                    </p>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => generateAISummary(result, index)}
+                    disabled={loadingIndex !== null}
+                    className="mb-4"
+                  >
+                    {loadingIndex === index ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        Generate AI Summary
+                      </>
+                    )}
+                  </Button>
+                )}
+
                 <div className="flex items-center justify-between">
                   <div className="flex gap-2 flex-wrap">
                     {result.tags.map((tag, i) => (

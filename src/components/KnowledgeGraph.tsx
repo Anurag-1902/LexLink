@@ -311,7 +311,10 @@ export const KnowledgeGraph = () => {
     });
   }, [data?.edges, filteredNodeIds, showDomainConnections, filters.relationshipTypes]);
 
-  // Stats for display
+  // All case nodes for dropdowns (unfiltered)
+  const allCaseNodes = useMemo(() => nodes.filter(n => n.type === 'case'), [nodes]);
+
+  // Stats for display (filtered)
   const caseNodes = filteredNodes.filter(n => n.type === 'case');
   const domainNodes = filteredNodes.filter(n => n.type === 'domain');
   const citationEdges = visibleEdges.filter(e => e.type === 'cites');
@@ -471,7 +474,7 @@ export const KnowledgeGraph = () => {
                       >
                         <SelectTrigger><SelectValue placeholder="Select case" /></SelectTrigger>
                         <SelectContent>
-                          {caseNodes.map(c => (
+                          {allCaseNodes.map(c => (
                             <SelectItem key={c.id} value={c.id}>
                               {c.caseDetails?.name || c.label}
                             </SelectItem>
@@ -490,7 +493,7 @@ export const KnowledgeGraph = () => {
                       >
                         <SelectTrigger><SelectValue placeholder="Select case" /></SelectTrigger>
                         <SelectContent>
-                          {caseNodes.map(c => (
+                          {allCaseNodes.map(c => (
                             <SelectItem key={c.id} value={c.id}>
                               {c.caseDetails?.name || c.label}
                             </SelectItem>

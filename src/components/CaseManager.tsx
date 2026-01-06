@@ -18,10 +18,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { useAddCase, useDeleteCase, useLegalCases } from "@/hooks/useLegalCases";
-import { Plus, Trash2, Loader2, Database, Scale } from "lucide-react";
+import { useAddCase, useDeleteCase, useLegalCases, useSummarizeCase } from "@/hooks/useLegalCases";
+import { useDetectRelationships, useAutoCreateRelationships } from "@/hooks/useDetectRelationships";
+import { Plus, Trash2, Loader2, Database, Scale, Sparkles, Brain } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
+import { toast } from "sonner";
 
 const COURTS = [
   "Supreme Court of the United States",
@@ -45,6 +47,8 @@ const JURISDICTIONS = [
 
 export const CaseManager = () => {
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState("");
   const [newCase, setNewCase] = useState({
     name: "",
     court: COURTS[0],
@@ -57,12 +61,18 @@ export const CaseManager = () => {
   const { data: cases, isLoading } = useLegalCases(50);
   const addCase = useAddCase();
   const deleteCase = useDeleteCase();
+  const summarizeCase = useSummarizeCase();
+  const detectRelationships = useDetectRelationships();
+  const autoCreateRelationships = useAutoCreateRelationships();
 
-  const handleAddCase = () => {
+  const handleAddCase = async () => {
     if (!newCase.name.trim()) return;
     
-    addCase.mutate(
-      {
+    setIsProcessing(true);
+    setProcessingStatus("Adding case...");
+    
+    try {
+      const addedCase = await addCase.mutateAsync({
         name: newCase.name,
         court: newCase.court,
         jurisdiction: newCase.jurisdiction,
@@ -70,21 +80,71 @@ export const CaseManager = () => {
         summary: newCase.summary,
         docket_number: newCase.docket_number,
         case_id: `MANUAL-${Date.now()}`,
-      },
-      {
-        onSuccess: () => {
-          setIsAddOpen(false);
-          setNewCase({
-            name: "",
-            court: COURTS[0],
-            jurisdiction: JURISDICTIONS[0],
-            decision_date: new Date().toISOString().split("T")[0],
-            summary: "",
-            docket_number: "",
+      });
+      
+      let finalSummary = newCase.summary;
+      
+      // Generate AI summary if no manual summary
+      if (!newCase.summary && addedCase?.id) {
+        setProcessingStatus("Generating AI summary...");
+        try {
+          const result = await summarizeCase.mutateAsync({
+            caseId: addedCase.id,
+            caseName: newCase.name,
+            court: newCase.court,
+            jurisdiction: newCase.jurisdiction,
           });
-        },
+          finalSummary = result?.summary;
+          toast.success("AI summary generated!");
+        } catch (err) {
+          console.error("Summary generation failed:", err);
+        }
       }
-    );
+      
+      // Detect and create AI relationships
+      if (addedCase?.id) {
+        setProcessingStatus("Detecting relationships...");
+        try {
+          const detection = await detectRelationships.mutateAsync({
+            newCaseId: addedCase.id,
+            newCaseName: newCase.name,
+            newCaseSummary: finalSummary,
+            newCaseCourt: newCase.court,
+            newCaseJurisdiction: newCase.jurisdiction,
+          });
+          
+          if (detection.relationships) {
+            const { citations, similarities, contradictions } = detection.relationships;
+            const total = (citations?.length || 0) + (similarities?.length || 0) + (contradictions?.length || 0);
+            
+            if (total > 0) {
+              await autoCreateRelationships.mutateAsync({
+                newCaseId: addedCase.id,
+                relationships: detection.relationships,
+              });
+            }
+          }
+        } catch (err) {
+          console.error("Relationship detection failed:", err);
+        }
+      }
+      
+      setIsAddOpen(false);
+      setNewCase({
+        name: "",
+        court: COURTS[0],
+        jurisdiction: JURISDICTIONS[0],
+        decision_date: new Date().toISOString().split("T")[0],
+        summary: "",
+        docket_number: "",
+      });
+      toast.success("Case added with AI analysis!");
+    } catch (err) {
+      toast.error("Failed to add case");
+    } finally {
+      setIsProcessing(false);
+      setProcessingStatus("");
+    }
   };
 
   const handleDeleteCase = (id: string, name: string) => {
@@ -195,26 +255,30 @@ export const CaseManager = () => {
                   id="summary"
                   value={newCase.summary}
                   onChange={(e) => setNewCase({ ...newCase, summary: e.target.value })}
-                  placeholder="Brief summary of the case..."
+                  placeholder="Leave empty for AI-generated summary..."
                   rows={3}
                   className="mt-1"
                 />
+                <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                  <Sparkles className="h-3 w-3" />
+                  <span>AI will auto-generate summary and detect relationships</span>
+                </div>
               </div>
 
               <Button
                 onClick={handleAddCase}
-                disabled={!newCase.name.trim() || addCase.isPending}
+                disabled={!newCase.name.trim() || isProcessing}
                 className="w-full"
               >
-                {addCase.isPending ? (
+                {isProcessing ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Adding...
+                    {processingStatus}
                   </>
                 ) : (
                   <>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Case
+                    <Brain className="w-4 h-4 mr-2" />
+                    Add with AI Analysis
                   </>
                 )}
               </Button>

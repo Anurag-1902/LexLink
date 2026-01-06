@@ -8,8 +8,9 @@ import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { useKnowledgeGraph, GraphNode, GraphEdge } from "@/hooks/useKnowledgeGraph";
-import { useAddCase, useAddCitation, useAddContradiction, useAddSimilarity, useSummarizeCase } from "@/hooks/useLegalCases";
-import { Loader2, ZoomIn, ZoomOut, Maximize2, Info, BookOpen, Scale, AlertTriangle, Link2, Plus, X, FileText, GitBranch, Users, ArrowRight } from "lucide-react";
+import { useAddCase, useAddCitation, useAddContradiction, useAddSimilarity, useSummarizeCase, useLegalCases } from "@/hooks/useLegalCases";
+import { useDetectRelationships, useAutoCreateRelationships } from "@/hooks/useDetectRelationships";
+import { Loader2, ZoomIn, ZoomOut, Maximize2, Info, BookOpen, Scale, AlertTriangle, Link2, Plus, X, FileText, GitBranch, Users, ArrowRight, Sparkles, Brain } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "./ui/label";
 import { GraphFiltersComponent, GraphFilters } from "./GraphFilters";
@@ -58,6 +59,9 @@ export const KnowledgeGraph = () => {
   const addContradictionMutation = useAddContradiction();
   const addSimilarityMutation = useAddSimilarity();
   const summarizeMutation = useSummarizeCase();
+  const detectRelationshipsMutation = useDetectRelationships();
+  const autoCreateRelationshipsMutation = useAutoCreateRelationships();
+  const { data: allCases } = useLegalCases(100); // For dropdown
   
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -70,6 +74,7 @@ export const KnowledgeGraph = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isRelationshipDialogOpen, setIsRelationshipDialogOpen] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [isDetectingRelationships, setIsDetectingRelationships] = useState(false);
   const [relationshipType, setRelationshipType] = useState<'citation' | 'contradiction' | 'similarity'>('citation');
   
   // Filters state
@@ -156,6 +161,8 @@ export const KnowledgeGraph = () => {
         summary: newCase.summary || undefined,
       });
       
+      let finalSummary = newCase.summary;
+      
       // Generate AI summary if no manual summary was provided
       if (!newCase.summary && addedCase?.id) {
         toast({ title: "Generating AI Summary", description: "Creating an intelligent case summary..." });
@@ -166,14 +173,49 @@ export const KnowledgeGraph = () => {
             court: newCase.court,
             jurisdiction: newCase.jurisdiction || undefined,
           });
+          finalSummary = result?.summary;
           toast({ title: "Summary Generated", description: "AI summary has been added to the case." });
         } catch (sumError) {
           console.error("Summarization failed:", sumError);
-          // Case was added successfully, just without AI summary
         }
       }
       
-      toast({ title: "Success", description: "Case added to graph" });
+      // AI-powered relationship detection
+      if (addedCase?.id) {
+        setIsDetectingRelationships(true);
+        toast({ title: "Detecting Relationships", description: "AI is analyzing case relationships..." });
+        try {
+          const detectionResult = await detectRelationshipsMutation.mutateAsync({
+            newCaseId: addedCase.id,
+            newCaseName: newCase.name,
+            newCaseSummary: finalSummary,
+            newCaseCourt: newCase.court,
+            newCaseJurisdiction: newCase.jurisdiction || undefined,
+          });
+          
+          if (detectionResult.relationships) {
+            const { citations, similarities, contradictions } = detectionResult.relationships;
+            const totalFound = (citations?.length || 0) + (similarities?.length || 0) + (contradictions?.length || 0);
+            
+            if (totalFound > 0) {
+              // Auto-create the detected relationships
+              await autoCreateRelationshipsMutation.mutateAsync({
+                newCaseId: addedCase.id,
+                relationships: detectionResult.relationships,
+              });
+            } else {
+              toast({ title: "Analysis Complete", description: "No related cases found in the dataset." });
+            }
+          }
+        } catch (detectError) {
+          console.error("Relationship detection failed:", detectError);
+          toast({ title: "Note", description: "Case added but relationship detection was skipped.", variant: "default" });
+        } finally {
+          setIsDetectingRelationships(false);
+        }
+      }
+      
+      toast({ title: "Success", description: "Case added to graph with AI analysis" });
       setNewCase({ name: "", court: "", jurisdiction: "", decision_date: "", docket_number: "", summary: "" });
       setIsAddDialogOpen(false);
       refetch();
@@ -181,6 +223,7 @@ export const KnowledgeGraph = () => {
       toast({ title: "Error", description: "Failed to add case", variant: "destructive" });
     } finally {
       setIsSummarizing(false);
+      setIsDetectingRelationships(false);
     }
   };
 
@@ -311,8 +354,16 @@ export const KnowledgeGraph = () => {
     });
   }, [data?.edges, filteredNodeIds, showDomainConnections, filters.relationshipTypes]);
 
-  // All case nodes for dropdowns (unfiltered)
+  // All case nodes for dropdowns - use both graph nodes and database cases for freshest data
   const allCaseNodes = useMemo(() => nodes.filter(n => n.type === 'case'), [nodes]);
+  
+  // Combined list: prefer database cases (fresher) but fallback to graph nodes
+  const dropdownCases = useMemo(() => {
+    if (allCases && allCases.length > 0) {
+      return allCases.map(c => ({ id: c.id, name: c.name, court: c.court }));
+    }
+    return allCaseNodes.map(n => ({ id: n.id, name: n.caseDetails?.name || n.label, court: n.caseDetails?.court }));
+  }, [allCases, allCaseNodes]);
 
   // Stats for display (filtered)
   const caseNodes = filteredNodes.filter(n => n.type === 'case');
@@ -408,12 +459,13 @@ export const KnowledgeGraph = () => {
                     onChange={(e) => setNewCase({ ...newCase, summary: e.target.value })}
                     rows={3}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    💡 Leave summary empty to auto-generate with AI
-                  </p>
-                  <Button onClick={handleAddCase} disabled={addCaseMutation.isPending || isSummarizing} className="w-full">
-                    {(addCaseMutation.isPending || isSummarizing) ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    {isSummarizing ? "Generating Summary..." : "Add to Graph"}
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Sparkles className="h-3 w-3" />
+                    <span>AI will auto-generate summary and detect relationships</span>
+                  </div>
+                  <Button onClick={handleAddCase} disabled={addCaseMutation.isPending || isSummarizing || isDetectingRelationships} className="w-full">
+                    {(addCaseMutation.isPending || isSummarizing || isDetectingRelationships) ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Brain className="h-4 w-4 mr-2" />}
+                    {isSummarizing ? "Generating Summary..." : isDetectingRelationships ? "Detecting Relationships..." : "Add with AI Analysis"}
                   </Button>
                 </div>
               </DialogContent>
@@ -474,9 +526,9 @@ export const KnowledgeGraph = () => {
                       >
                         <SelectTrigger><SelectValue placeholder="Select case" /></SelectTrigger>
                         <SelectContent>
-                          {allCaseNodes.map(c => (
+                          {dropdownCases.map(c => (
                             <SelectItem key={c.id} value={c.id}>
-                              {c.caseDetails?.name || c.label}
+                              {c.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -493,9 +545,9 @@ export const KnowledgeGraph = () => {
                       >
                         <SelectTrigger><SelectValue placeholder="Select case" /></SelectTrigger>
                         <SelectContent>
-                          {allCaseNodes.map(c => (
+                          {dropdownCases.map(c => (
                             <SelectItem key={c.id} value={c.id}>
-                              {c.caseDetails?.name || c.label}
+                              {c.name}
                             </SelectItem>
                           ))}
                         </SelectContent>

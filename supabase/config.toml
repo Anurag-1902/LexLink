@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.summarize-case]
 verify_jwt = false
+
+[functions.detect-relationships]
+verify_jwt = false

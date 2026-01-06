@@ -75,6 +75,8 @@ export const KnowledgeGraph = () => {
   const [isRelationshipDialogOpen, setIsRelationshipDialogOpen] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isDetectingRelationships, setIsDetectingRelationships] = useState(false);
+  const [isRunningBulkAI, setIsRunningBulkAI] = useState(false);
+  const [bulkAIProgress, setBulkAIProgress] = useState({ current: 0, total: 0 });
   const [relationshipType, setRelationshipType] = useState<'citation' | 'contradiction' | 'similarity'>('citation');
   
   // Filters state
@@ -224,6 +226,72 @@ export const KnowledgeGraph = () => {
     } finally {
       setIsSummarizing(false);
       setIsDetectingRelationships(false);
+    }
+  };
+
+  // Bulk AI relationship detection for all cases
+  const handleBulkAIDetection = async () => {
+    if (!allCases || allCases.length < 2) {
+      toast({ title: "Not enough cases", description: "Need at least 2 cases to detect relationships", variant: "destructive" });
+      return;
+    }
+
+    setIsRunningBulkAI(true);
+    setBulkAIProgress({ current: 0, total: allCases.length });
+    
+    let totalCreated = { citations: 0, similarities: 0, contradictions: 0 };
+    
+    try {
+      toast({ title: "AI Analysis Started", description: `Analyzing ${allCases.length} cases for relationships...` });
+      
+      for (let i = 0; i < allCases.length; i++) {
+        const caseItem = allCases[i];
+        setBulkAIProgress({ current: i + 1, total: allCases.length });
+        
+        try {
+          const detection = await detectRelationshipsMutation.mutateAsync({
+            newCaseId: caseItem.id,
+            newCaseName: caseItem.name,
+            newCaseSummary: caseItem.summary || undefined,
+            newCaseCourt: caseItem.court,
+            newCaseJurisdiction: caseItem.jurisdiction || undefined,
+          });
+          
+          if (detection.relationships) {
+            const { citations, similarities, contradictions } = detection.relationships;
+            const total = (citations?.length || 0) + (similarities?.length || 0) + (contradictions?.length || 0);
+            
+            if (total > 0) {
+              const results = await autoCreateRelationshipsMutation.mutateAsync({
+                newCaseId: caseItem.id,
+                relationships: detection.relationships,
+              });
+              totalCreated.citations += results.citations;
+              totalCreated.similarities += results.similarities;
+              totalCreated.contradictions += results.contradictions;
+            }
+          }
+        } catch (caseError) {
+          console.error(`Failed to analyze case ${caseItem.name}:`, caseError);
+        }
+        
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      const grandTotal = totalCreated.citations + totalCreated.similarities + totalCreated.contradictions;
+      toast({ 
+        title: "AI Analysis Complete", 
+        description: `Created ${grandTotal} relationships: ${totalCreated.citations} citations, ${totalCreated.similarities} similarities, ${totalCreated.contradictions} contradictions`
+      });
+      
+      refetch();
+    } catch (error) {
+      console.error("Bulk AI detection failed:", error);
+      toast({ title: "Analysis failed", description: "Some cases could not be analyzed", variant: "destructive" });
+    } finally {
+      setIsRunningBulkAI(false);
+      setBulkAIProgress({ current: 0, total: 0 });
     }
   };
 
@@ -470,6 +538,27 @@ export const KnowledgeGraph = () => {
                 </div>
               </DialogContent>
             </Dialog>
+            
+            {/* AI Bulk Detection Button */}
+            <Button 
+              size="sm" 
+              variant="secondary" 
+              className="gap-1 bg-gradient-to-r from-primary/20 to-primary/10 hover:from-primary/30 hover:to-primary/20"
+              onClick={handleBulkAIDetection}
+              disabled={isRunningBulkAI || !allCases || allCases.length < 2}
+            >
+              {isRunningBulkAI ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Analyzing {bulkAIProgress.current}/{bulkAIProgress.total}</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  <span>AI Detect All</span>
+                </>
+              )}
+            </Button>
             
             {/* Add Relationship Dialog */}
             <Dialog open={isRelationshipDialogOpen} onOpenChange={setIsRelationshipDialogOpen}>

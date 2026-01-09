@@ -77,6 +77,7 @@ export const KnowledgeGraph = () => {
   const [isDetectingRelationships, setIsDetectingRelationships] = useState(false);
   const [isRunningBulkAI, setIsRunningBulkAI] = useState(false);
   const [bulkAIProgress, setBulkAIProgress] = useState({ current: 0, total: 0 });
+  const [isDetectingSingleCase, setIsDetectingSingleCase] = useState(false);
   const [relationshipType, setRelationshipType] = useState<'citation' | 'contradiction' | 'similarity'>('citation');
   
   // Filters state
@@ -292,6 +293,55 @@ export const KnowledgeGraph = () => {
     } finally {
       setIsRunningBulkAI(false);
       setBulkAIProgress({ current: 0, total: 0 });
+    }
+  };
+
+  // Single case AI relationship detection
+  const handleSingleCaseAIDetection = async (caseNode: GraphNode) => {
+    if (!caseNode.caseDetails || !allCases || allCases.length < 2) {
+      toast({ title: "Cannot detect", description: "Not enough cases to detect relationships", variant: "destructive" });
+      return;
+    }
+
+    setIsDetectingSingleCase(true);
+    
+    try {
+      toast({ title: "AI Analysis Started", description: `Analyzing "${caseNode.caseDetails.name}" for relationships...` });
+      
+      const detection = await detectRelationshipsMutation.mutateAsync({
+        newCaseId: caseNode.id,
+        newCaseName: caseNode.caseDetails.name,
+        newCaseSummary: caseNode.caseDetails.summary || undefined,
+        newCaseCourt: caseNode.caseDetails.court,
+        newCaseJurisdiction: caseNode.caseDetails.jurisdiction || undefined,
+      });
+      
+      if (detection.relationships) {
+        const { citations, similarities, contradictions } = detection.relationships;
+        const total = (citations?.length || 0) + (similarities?.length || 0) + (contradictions?.length || 0);
+        
+        if (total > 0) {
+          const results = await autoCreateRelationshipsMutation.mutateAsync({
+            newCaseId: caseNode.id,
+            relationships: detection.relationships,
+          });
+          
+          const grandTotal = results.citations + results.similarities + results.contradictions;
+          toast({ 
+            title: "Relationships Detected", 
+            description: `Created ${grandTotal} relationships: ${results.citations} citations, ${results.similarities} similarities, ${results.contradictions} contradictions`
+          });
+          
+          refetch();
+        } else {
+          toast({ title: "No relationships found", description: "AI did not detect any new relationships for this case" });
+        }
+      }
+    } catch (error) {
+      console.error("Single case AI detection failed:", error);
+      toast({ title: "Analysis failed", description: "Could not analyze case relationships", variant: "destructive" });
+    } finally {
+      setIsDetectingSingleCase(false);
     }
   };
 
@@ -1170,13 +1220,38 @@ export const KnowledgeGraph = () => {
                 )}
               </div>
               
-              <div className="text-right">
-                <div className="text-2xl font-bold text-primary">
-                  {visibleEdges.filter(e => 
-                    e.source === selectedNode.id || e.target === selectedNode.id
-                  ).filter(e => e.type !== 'belongs_to').length}
+              <div className="flex flex-col items-end gap-2">
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-primary">
+                    {visibleEdges.filter(e => 
+                      e.source === selectedNode.id || e.target === selectedNode.id
+                    ).filter(e => e.type !== 'belongs_to').length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">connections</div>
                 </div>
-                <div className="text-xs text-muted-foreground">connections</div>
+                
+                {/* AI Detect Relationships Button */}
+                {selectedNode.type === 'case' && selectedNode.caseDetails && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1 bg-gradient-to-r from-primary/10 to-primary/5 hover:from-primary/20 hover:to-primary/10 border-primary/20"
+                    onClick={() => handleSingleCaseAIDetection(selectedNode)}
+                    disabled={isDetectingSingleCase || !allCases || allCases.length < 2}
+                  >
+                    {isDetectingSingleCase ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Detecting...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3 w-3" />
+                        Detect Relationships
+                      </>
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
 

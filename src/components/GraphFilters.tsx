@@ -81,14 +81,15 @@ export const GraphFiltersComponent = ({
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {/* Search Input */}
-      <div className="relative flex-1 min-w-[200px] max-w-[300px]">
+      {/* Search Input with tooltip */}
+      <div className="relative flex-1 min-w-[200px] max-w-[350px] group">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search cases..."
+          placeholder="Search: murder, theft, fraud, contract..."
           value={filters.searchQuery}
           onChange={(e) => updateFilters({ searchQuery: e.target.value })}
-          className="pl-9 h-9 text-sm"
+          className="pl-9 pr-8 h-9 text-sm"
+          title="Searches in: Case Name, Summary, Full Text, Headnotes. Use exact keywords like: murder, theft, fraud, embezzlement, negligence, contract, assault, robbery, etc."
         />
         {filters.searchQuery && (
           <button
@@ -98,6 +99,19 @@ export const GraphFiltersComponent = ({
             <X className="h-3.5 w-3.5" />
           </button>
         )}
+        {/* Search info tooltip on hover */}
+        <div className="absolute left-0 top-full mt-1 z-50 hidden group-hover:block bg-popover border border-border rounded-md p-2 shadow-lg text-xs max-w-[300px]">
+          <p className="font-medium mb-1">Searches in:</p>
+          <ul className="text-muted-foreground space-y-0.5">
+            <li>• Case Name</li>
+            <li>• AI Summary</li>
+            <li>• Full Text</li>
+            <li>• Headnotes</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">
+            <span className="font-medium text-foreground">Keywords:</span> murder, theft, fraud, embezzlement, negligence, contract, assault, robbery, property, tort, criminal, civil, constitutional, etc.
+          </p>
+        </div>
       </div>
 
       {/* Filters Popover */}

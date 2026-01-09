@@ -418,14 +418,24 @@ export const KnowledgeGraph = () => {
       const caseDetails = node.caseDetails;
       if (!caseDetails) return false;
 
-      // Search query filter
+      // Search query filter - enhanced to search through all relevant fields
       if (filters.searchQuery) {
-        const query = filters.searchQuery.toLowerCase();
-        const matchesSearch =
-          caseDetails.name?.toLowerCase().includes(query) ||
-          caseDetails.summary?.toLowerCase().includes(query) ||
-          caseDetails.court?.toLowerCase().includes(query) ||
-          caseDetails.jurisdiction?.toLowerCase().includes(query);
+        const query = filters.searchQuery.toLowerCase().trim();
+        // Split query into terms for better matching (e.g., "theft fraud" matches cases with either)
+        const searchTerms = query.split(/\s+/).filter(term => term.length > 0);
+        
+        // Build searchable text from all relevant fields
+        const searchableText = [
+          caseDetails.name,
+          caseDetails.summary,
+          caseDetails.court,
+          caseDetails.jurisdiction,
+          caseDetails.fullText,
+          caseDetails.headnotes,
+        ].filter(Boolean).join(' ').toLowerCase();
+        
+        // Match if any search term is found
+        const matchesSearch = searchTerms.some(term => searchableText.includes(term));
         if (!matchesSearch) return false;
       }
 

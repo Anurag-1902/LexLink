@@ -418,24 +418,30 @@ export const KnowledgeGraph = () => {
       const caseDetails = node.caseDetails;
       if (!caseDetails) return false;
 
-      // Search query filter - enhanced to search through all relevant fields
+      // Search query filter - strict word boundary matching for accuracy
       if (filters.searchQuery) {
         const query = filters.searchQuery.toLowerCase().trim();
-        // Split query into terms for better matching (e.g., "theft fraud" matches cases with either)
-        const searchTerms = query.split(/\s+/).filter(term => term.length > 0);
+        // Split query into terms
+        const searchTerms = query.split(/\s+/).filter(term => term.length > 1);
+        
+        if (searchTerms.length === 0) return true;
         
         // Build searchable text from all relevant fields
         const searchableText = [
           caseDetails.name,
           caseDetails.summary,
-          caseDetails.court,
-          caseDetails.jurisdiction,
           caseDetails.fullText,
           caseDetails.headnotes,
         ].filter(Boolean).join(' ').toLowerCase();
         
-        // Match if any search term is found
-        const matchesSearch = searchTerms.some(term => searchableText.includes(term));
+        // Use word boundary matching for more accurate results
+        // Match if ALL search terms are found (AND logic for precision)
+        const matchesSearch = searchTerms.every(term => {
+          // Create word boundary regex for exact word matching
+          const wordBoundaryRegex = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+          return wordBoundaryRegex.test(searchableText);
+        });
+        
         if (!matchesSearch) return false;
       }
 

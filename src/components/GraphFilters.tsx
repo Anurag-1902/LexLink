@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -30,6 +30,47 @@ const RELATIONSHIP_OPTIONS = [
   { value: "overrules", label: "Overrules", icon: Scale, color: "hsl(0, 80%, 55%)" },
 ];
 
+// Categorized legal keywords for suggestions
+const LEGAL_KEYWORDS = {
+  "Criminal Law": [
+    "murder", "manslaughter", "homicide", "assault", "battery", "robbery", "theft", 
+    "burglary", "arson", "kidnapping", "rape", "drug", "narcotic", "conspiracy"
+  ],
+  "White Collar": [
+    "fraud", "embezzlement", "forgery", "bribery", "extortion", "racketeering", 
+    "money laundering", "tax evasion", "insider trading", "perjury"
+  ],
+  "Civil Law": [
+    "negligence", "malpractice", "defamation", "libel", "slander", "trespass",
+    "nuisance", "conversion", "breach", "damages", "liability"
+  ],
+  "Contract Law": [
+    "contract", "agreement", "warranty", "consideration", "performance", 
+    "rescission", "reformation", "specific performance", "promissory estoppel"
+  ],
+  "Constitutional": [
+    "constitutional", "amendment", "due process", "equal protection", "free speech",
+    "search seizure", "habeas corpus", "civil rights", "discrimination"
+  ],
+  "Property": [
+    "property", "real estate", "easement", "lease", "landlord", "tenant", 
+    "mortgage", "foreclosure", "eminent domain", "zoning"
+  ],
+  "Family Law": [
+    "divorce", "custody", "child support", "alimony", "adoption", "guardianship",
+    "domestic violence", "paternity"
+  ],
+  "Corporate": [
+    "corporation", "shareholder", "merger", "acquisition", "securities", 
+    "fiduciary", "derivative", "dissolution", "bankruptcy"
+  ]
+};
+
+// Flatten all keywords for search
+const ALL_KEYWORDS = Object.entries(LEGAL_KEYWORDS).flatMap(([category, keywords]) => 
+  keywords.map(keyword => ({ keyword, category }))
+);
+
 export const GraphFiltersComponent = ({
   filters,
   onFiltersChange,
@@ -37,6 +78,10 @@ export const GraphFiltersComponent = ({
   availableJurisdictions,
 }: GraphFiltersProps) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const updateFilters = (partial: Partial<GraphFilters>) => {
     onFiltersChange({ ...filters, ...partial });
@@ -79,39 +124,161 @@ export const GraphFiltersComponent = ({
     filters.relationshipTypes.length +
     (filters.dateRange.start || filters.dateRange.end ? 1 : 0);
 
+  // Filter suggestions based on current input
+  const filteredSuggestions = useMemo(() => {
+    const query = filters.searchQuery.toLowerCase().trim();
+    if (!query || query.length < 1) return [];
+    
+    // Get the last word being typed (for multi-word queries)
+    const words = query.split(/\s+/);
+    const lastWord = words[words.length - 1];
+    
+    if (lastWord.length < 1) return [];
+    
+    return ALL_KEYWORDS
+      .filter(({ keyword }) => keyword.toLowerCase().startsWith(lastWord))
+      .slice(0, 8);
+  }, [filters.searchQuery]);
+
+  // Handle keyboard navigation
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showSuggestions || filteredSuggestions.length === 0) return;
+    
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIndex(prev => Math.min(prev + 1, filteredSuggestions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter" && filteredSuggestions[selectedIndex]) {
+      e.preventDefault();
+      selectSuggestion(filteredSuggestions[selectedIndex].keyword);
+    } else if (e.key === "Escape") {
+      setShowSuggestions(false);
+    }
+  };
+
+  const selectSuggestion = (keyword: string) => {
+    const words = filters.searchQuery.trim().split(/\s+/);
+    words[words.length - 1] = keyword;
+    updateFilters({ searchQuery: words.join(" ") });
+    setShowSuggestions(false);
+    setSelectedIndex(0);
+    inputRef.current?.focus();
+  };
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        suggestionsRef.current && 
+        !suggestionsRef.current.contains(e.target as Node) &&
+        inputRef.current &&
+        !inputRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Reset selection when suggestions change
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [filteredSuggestions]);
+
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {/* Search Input with tooltip */}
-      <div className="relative flex-1 min-w-[200px] max-w-[350px] group">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      {/* Search Input with suggestions dropdown */}
+      <div className="relative flex-1 min-w-[200px] max-w-[350px]">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
         <Input
-          placeholder="Search: murder, theft, fraud, contract..."
+          ref={inputRef}
+          placeholder="Search: murder, theft, fraud..."
           value={filters.searchQuery}
-          onChange={(e) => updateFilters({ searchQuery: e.target.value })}
+          onChange={(e) => {
+            updateFilters({ searchQuery: e.target.value });
+            setShowSuggestions(true);
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          onKeyDown={handleKeyDown}
           className="pl-9 pr-8 h-9 text-sm"
-          title="Searches in: Case Name, Summary, Full Text, Headnotes. Use exact keywords like: murder, theft, fraud, embezzlement, negligence, contract, assault, robbery, etc."
         />
         {filters.searchQuery && (
           <button
-            onClick={() => updateFilters({ searchQuery: "" })}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              updateFilters({ searchQuery: "" });
+              setShowSuggestions(false);
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground z-10"
           >
             <X className="h-3.5 w-3.5" />
           </button>
         )}
-        {/* Search info tooltip on hover */}
-        <div className="absolute left-0 top-full mt-1 z-50 hidden group-hover:block bg-popover border border-border rounded-md p-2 shadow-lg text-xs max-w-[300px]">
-          <p className="font-medium mb-1">Searches in:</p>
-          <ul className="text-muted-foreground space-y-0.5">
-            <li>• Case Name</li>
-            <li>• AI Summary</li>
-            <li>• Full Text</li>
-            <li>• Headnotes</li>
-          </ul>
-          <p className="mt-2 text-muted-foreground">
-            <span className="font-medium text-foreground">Keywords:</span> murder, theft, fraud, embezzlement, negligence, contract, assault, robbery, property, tort, criminal, civil, constitutional, etc.
-          </p>
-        </div>
+        
+        {/* Suggestions dropdown */}
+        {showSuggestions && filteredSuggestions.length > 0 && (
+          <div 
+            ref={suggestionsRef}
+            className="absolute left-0 top-full mt-1 w-full z-50 bg-popover border border-border rounded-md shadow-lg overflow-hidden"
+          >
+            <div className="py-1 max-h-64 overflow-y-auto">
+              {filteredSuggestions.map((item, index) => (
+                <button
+                  key={item.keyword}
+                  onClick={() => selectSuggestion(item.keyword)}
+                  className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-2 transition-colors ${
+                    index === selectedIndex 
+                      ? "bg-accent text-accent-foreground" 
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  <span className="font-medium">{item.keyword}</span>
+                  <Badge variant="outline" className="text-xs shrink-0">
+                    {item.category}
+                  </Badge>
+                </button>
+              ))}
+            </div>
+            <div className="px-3 py-2 border-t border-border bg-muted/50 text-xs text-muted-foreground">
+              ↑↓ to navigate • Enter to select • Esc to close
+            </div>
+          </div>
+        )}
+        
+        {/* Show all categories when empty and focused */}
+        {showSuggestions && filters.searchQuery.length === 0 && (
+          <div 
+            ref={suggestionsRef}
+            className="absolute left-0 top-full mt-1 w-[320px] z-50 bg-popover border border-border rounded-md shadow-lg overflow-hidden"
+          >
+            <div className="p-3 max-h-80 overflow-y-auto">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Legal Categories:</p>
+              <div className="space-y-2">
+                {Object.entries(LEGAL_KEYWORDS).map(([category, keywords]) => (
+                  <div key={category}>
+                    <p className="text-xs font-semibold text-foreground mb-1">{category}</p>
+                    <div className="flex flex-wrap gap-1">
+                      {keywords.slice(0, 5).map(keyword => (
+                        <button
+                          key={keyword}
+                          onClick={() => {
+                            updateFilters({ searchQuery: keyword });
+                            setShowSuggestions(false);
+                          }}
+                          className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-accent hover:text-accent-foreground transition-colors"
+                        >
+                          {keyword}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Filters Popover */}

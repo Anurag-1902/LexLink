@@ -52,7 +52,7 @@ const JURISDICTIONS = ["Federal", "California", "New York", "Texas", "Florida", 
 
 export const KnowledgeGraph = () => {
   const { toast } = useToast();
-  const [nodeLimit, setNodeLimit] = useState(30);
+  const [nodeLimit, setNodeLimit] = useState(100);
   const { data, isLoading, error, refetch } = useKnowledgeGraph(nodeLimit);
   const addCaseMutation = useAddCase();
   const addCitationMutation = useAddCitation();

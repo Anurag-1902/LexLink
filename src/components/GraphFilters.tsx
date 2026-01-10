@@ -30,39 +30,67 @@ const RELATIONSHIP_OPTIONS = [
   { value: "overrules", label: "Overrules", icon: Scale, color: "hsl(0, 80%, 55%)" },
 ];
 
-// Categorized legal keywords for suggestions
+// Expanded legal keywords for suggestions - searches AI summaries only
 const LEGAL_KEYWORDS = {
   "Criminal Law": [
     "murder", "manslaughter", "homicide", "assault", "battery", "robbery", "theft", 
-    "burglary", "arson", "kidnapping", "rape", "drug", "narcotic", "conspiracy"
+    "burglary", "arson", "kidnapping", "rape", "drug", "narcotic", "conspiracy",
+    "felony", "misdemeanor", "intent", "premeditation", "self-defense", "alibi",
+    "witness", "evidence", "arrest", "conviction", "sentence", "parole", "probation"
   ],
-  "White Collar": [
+  "White Collar Crime": [
     "fraud", "embezzlement", "forgery", "bribery", "extortion", "racketeering", 
-    "money laundering", "tax evasion", "insider trading", "perjury"
+    "money laundering", "tax evasion", "insider trading", "perjury", "corruption",
+    "wire fraud", "mail fraud", "securities fraud", "bank fraud", "identity theft",
+    "ponzi", "scheme", "misappropriation", "kickback", "collusion"
   ],
-  "Civil Law": [
+  "Civil & Tort": [
     "negligence", "malpractice", "defamation", "libel", "slander", "trespass",
-    "nuisance", "conversion", "breach", "damages", "liability"
+    "nuisance", "conversion", "breach", "damages", "liability", "tort",
+    "personal injury", "wrongful death", "strict liability", "vicarious",
+    "proximate cause", "duty of care", "standard of care", "reasonable"
   ],
-  "Contract Law": [
+  "Contract": [
     "contract", "agreement", "warranty", "consideration", "performance", 
-    "rescission", "reformation", "specific performance", "promissory estoppel"
+    "rescission", "reformation", "specific performance", "promissory estoppel",
+    "breach of contract", "unconscionable", "duress", "misrepresentation",
+    "assignment", "novation", "modification", "termination", "void", "voidable"
   ],
   "Constitutional": [
     "constitutional", "amendment", "due process", "equal protection", "free speech",
-    "search seizure", "habeas corpus", "civil rights", "discrimination"
+    "search seizure", "habeas corpus", "civil rights", "discrimination",
+    "first amendment", "fourth amendment", "fifth amendment", "fourteenth",
+    "privilege", "immunity", "standing", "jurisdiction", "preemption"
   ],
-  "Property": [
+  "Property & Real Estate": [
     "property", "real estate", "easement", "lease", "landlord", "tenant", 
-    "mortgage", "foreclosure", "eminent domain", "zoning"
+    "mortgage", "foreclosure", "eminent domain", "zoning", "title", "deed",
+    "lien", "encumbrance", "adverse possession", "quiet title", "partition",
+    "covenant", "restriction", "right of way", "condemnation"
   ],
-  "Family Law": [
+  "Family": [
     "divorce", "custody", "child support", "alimony", "adoption", "guardianship",
-    "domestic violence", "paternity"
+    "domestic violence", "paternity", "visitation", "marital property",
+    "prenuptial", "annulment", "separation", "spousal support", "best interest"
   ],
-  "Corporate": [
+  "Corporate & Business": [
     "corporation", "shareholder", "merger", "acquisition", "securities", 
-    "fiduciary", "derivative", "dissolution", "bankruptcy"
+    "fiduciary", "derivative", "dissolution", "bankruptcy", "LLC", "partnership",
+    "director", "officer", "bylaws", "articles", "indemnification", "piercing",
+    "duty of loyalty", "business judgment", "proxy", "tender offer"
+  ],
+  "Labor & Employment": [
+    "employment", "discrimination", "harassment", "wrongful termination", "wage",
+    "overtime", "FLSA", "ADA", "Title VII", "EEOC", "retaliation", "whistleblower",
+    "collective bargaining", "union", "arbitration", "non-compete", "severance"
+  ],
+  "Intellectual Property": [
+    "patent", "trademark", "copyright", "trade secret", "infringement", "licensing",
+    "fair use", "prior art", "claims", "specification", "dilution", "distinctiveness"
+  ],
+  "Administrative": [
+    "agency", "regulation", "rulemaking", "adjudication", "administrative",
+    "hearing", "appeal", "review", "exhaustion", "deference", "chevron"
   ]
 };
 
@@ -195,7 +223,7 @@ export const GraphFiltersComponent = ({
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
         <Input
           ref={inputRef}
-          placeholder="Search: murder, theft, fraud..."
+          placeholder="Search AI summaries: theft, fraud, negligence..."
           value={filters.searchQuery}
           onChange={(e) => {
             updateFilters({ searchQuery: e.target.value });

@@ -418,7 +418,7 @@ export const KnowledgeGraph = () => {
       const caseDetails = node.caseDetails;
       if (!caseDetails) return false;
 
-      // Search query filter - strict word boundary matching for accuracy
+      // Search query filter - ONLY match from AI summary for accuracy
       if (filters.searchQuery) {
         const query = filters.searchQuery.toLowerCase().trim();
         // Split query into terms
@@ -426,20 +426,17 @@ export const KnowledgeGraph = () => {
         
         if (searchTerms.length === 0) return true;
         
-        // Build searchable text from all relevant fields
-        const searchableText = [
-          caseDetails.name,
-          caseDetails.summary,
-          caseDetails.fullText,
-          caseDetails.headnotes,
-        ].filter(Boolean).join(' ').toLowerCase();
+        // ONLY search in AI summary for precision
+        const summaryText = (caseDetails.summary || '').toLowerCase();
         
-        // Use word boundary matching for more accurate results
-        // Match if ALL search terms are found (AND logic for precision)
+        // If no summary exists, case won't match search
+        if (!summaryText) return false;
+        
+        // Use word boundary matching for accurate results
+        // Match if ALL search terms are found in summary (AND logic)
         const matchesSearch = searchTerms.every(term => {
-          // Create word boundary regex for exact word matching
           const wordBoundaryRegex = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
-          return wordBoundaryRegex.test(searchableText);
+          return wordBoundaryRegex.test(summaryText);
         });
         
         if (!matchesSearch) return false;

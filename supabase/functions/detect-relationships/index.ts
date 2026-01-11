@@ -30,7 +30,8 @@ serve(async (req) => {
       .from('legal_cases')
       .select('id, name, summary, court, jurisdiction')
       .neq('id', newCaseId)
-      .limit(50);
+      .not('summary', 'is', null)
+      .limit(30);
 
     if (fetchError) {
       console.error("Error fetching cases:", fetchError);
@@ -92,12 +93,13 @@ Only include relationships you're confident about. If no relationships exist, re
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-3-flash-preview",
         messages: [
-          { role: "system", content: "You are a legal AI expert that analyzes case relationships. Always respond with valid JSON only, no markdown." },
+          { role: "system", content: "You are a legal AI expert. Respond with valid JSON only." },
           { role: "user", content: prompt }
         ],
-        temperature: 0.3,
+        temperature: 0.2,
+        max_tokens: 1024,
       }),
     });
 

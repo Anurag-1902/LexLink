@@ -61,7 +61,7 @@ export const KnowledgeGraph = () => {
   const summarizeMutation = useSummarizeCase();
   const detectRelationshipsMutation = useDetectRelationships();
   const autoCreateRelationshipsMutation = useAutoCreateRelationships();
-  const { data: allCases } = useLegalCases(100); // For dropdown
+  const { data: allCases } = useLegalCases(25); // For dropdown & bulk AI
   
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -230,62 +230,73 @@ export const KnowledgeGraph = () => {
     }
   };
 
-  // Bulk AI relationship detection for all cases
+  // Bulk AI relationship detection (parallel batches for speed)
   const handleBulkAIDetection = async () => {
     if (!allCases || allCases.length < 2) {
       toast({ title: "Not enough cases", description: "Need at least 2 cases to detect relationships", variant: "destructive" });
       return;
     }
 
+    const casesToProcess = allCases.slice(0, 25); // Limit to 25 cases max
     setIsRunningBulkAI(true);
-    setBulkAIProgress({ current: 0, total: allCases.length });
-    
+    setBulkAIProgress({ current: 0, total: casesToProcess.length });
+
     let totalCreated = { citations: 0, similarities: 0, contradictions: 0 };
-    
+    const BATCH_SIZE = 3; // Process 3 cases in parallel
+
     try {
-      toast({ title: "AI Analysis Started", description: `Analyzing ${allCases.length} cases for relationships...` });
-      
-      for (let i = 0; i < allCases.length; i++) {
-        const caseItem = allCases[i];
-        setBulkAIProgress({ current: i + 1, total: allCases.length });
-        
-        try {
-          const detection = await detectRelationshipsMutation.mutateAsync({
-            newCaseId: caseItem.id,
-            newCaseName: caseItem.name,
-            newCaseSummary: caseItem.summary || undefined,
-            newCaseCourt: caseItem.court,
-            newCaseJurisdiction: caseItem.jurisdiction || undefined,
-          });
-          
-          if (detection.relationships) {
-            const { citations, similarities, contradictions } = detection.relationships;
-            const total = (citations?.length || 0) + (similarities?.length || 0) + (contradictions?.length || 0);
-            
-            if (total > 0) {
-              const results = await autoCreateRelationshipsMutation.mutateAsync({
-                newCaseId: caseItem.id,
-                relationships: detection.relationships,
-              });
-              totalCreated.citations += results.citations;
-              totalCreated.similarities += results.similarities;
-              totalCreated.contradictions += results.contradictions;
+      toast({ title: "AI Analysis Started", description: `Analyzing ${casesToProcess.length} cases in parallel...` });
+
+      for (let i = 0; i < casesToProcess.length; i += BATCH_SIZE) {
+        const batch = casesToProcess.slice(i, i + BATCH_SIZE);
+
+        const batchResults = await Promise.allSettled(
+          batch.map(async (caseItem) => {
+            const detection = await detectRelationshipsMutation.mutateAsync({
+              newCaseId: caseItem.id,
+              newCaseName: caseItem.name,
+              newCaseSummary: caseItem.summary || undefined,
+              newCaseCourt: caseItem.court,
+              newCaseJurisdiction: caseItem.jurisdiction || undefined,
+            });
+
+            if (detection.relationships) {
+              const { citations, similarities, contradictions } = detection.relationships;
+              const total = (citations?.length || 0) + (similarities?.length || 0) + (contradictions?.length || 0);
+
+              if (total > 0) {
+                return autoCreateRelationshipsMutation.mutateAsync({
+                  newCaseId: caseItem.id,
+                  relationships: detection.relationships,
+                });
+              }
             }
+            return { citations: 0, similarities: 0, contradictions: 0 };
+          })
+        );
+
+        for (const result of batchResults) {
+          if (result.status === "fulfilled" && result.value) {
+            totalCreated.citations += result.value.citations;
+            totalCreated.similarities += result.value.similarities;
+            totalCreated.contradictions += result.value.contradictions;
           }
-        } catch (caseError) {
-          console.error(`Failed to analyze case ${caseItem.name}:`, caseError);
         }
-        
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 500));
+
+        setBulkAIProgress({ current: Math.min(i + BATCH_SIZE, casesToProcess.length), total: casesToProcess.length });
+
+        // Brief pause between batches to avoid rate limits
+        if (i + BATCH_SIZE < casesToProcess.length) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
       }
-      
+
       const grandTotal = totalCreated.citations + totalCreated.similarities + totalCreated.contradictions;
-      toast({ 
-        title: "AI Analysis Complete", 
-        description: `Created ${grandTotal} relationships: ${totalCreated.citations} citations, ${totalCreated.similarities} similarities, ${totalCreated.contradictions} contradictions`
+      toast({
+        title: "AI Analysis Complete",
+        description: `Created ${grandTotal} relationships: ${totalCreated.citations} citations, ${totalCreated.similarities} similarities, ${totalCreated.contradictions} contradictions`,
       });
-      
+
       refetch();
     } catch (error) {
       console.error("Bulk AI detection failed:", error);

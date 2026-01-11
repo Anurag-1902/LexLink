@@ -9,6 +9,7 @@ import { CaseManager } from "@/components/CaseManager";
 import { SyntheticDataGenerator } from "@/components/SyntheticDataGenerator";
 import { useToast } from "@/hooks/use-toast";
 import { useLegalCases, useCaseStats } from "@/hooks/useLegalCases";
+import { useCaseSearch } from "@/hooks/useCaseSearch";
 
 // Demo data for presentation
 const DEMO_CASES = [
@@ -111,68 +112,171 @@ const DEMO_METRICS = {
   similarityScore: 87.3,
 };
 
-// Simple semantic similarity function using keyword matching
-const calculateRelevance = (query: string, caseData: typeof DEMO_CASES[0]): number => {
-  const queryLower = query.toLowerCase();
+// Deterministic relevance scoring (no random shuffling)
+type SearchCardResult = {
+  id?: string;
+  title: string;
+  court: string;
+  date: string;
+  summary: string;
+  tags: string[];
+  citations: number;
+  conflicts: number;
+  relevanceScore: number;
+};
+
+const tokenizeQuery = (query: string) =>
+  query
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 1);
+
+const scoreCase = (query: string, caseData: { title: string; summary: string; tags: string[] }) => {
+  const q = query.toLowerCase().trim();
+  if (!q) return 0;
+
+  const terms = tokenizeQuery(q);
   const searchableText = `${caseData.title} ${caseData.summary} ${caseData.tags.join(" ")}`.toLowerCase();
-  
-  // Check for exact phrase match
-  if (searchableText.includes(queryLower)) {
-    return 0.95 + Math.random() * 0.05;
-  }
-  
-  // Check for word matches
-  const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
-  const matchCount = queryWords.filter(word => searchableText.includes(word)).length;
-  
-  if (matchCount > 0) {
-    return 0.7 + (matchCount / queryWords.length) * 0.25;
-  }
-  
-  // Base relevance for legal topics
-  return 0.4 + Math.random() * 0.2;
+
+  // Exact phrase match gets a perfect score
+  if (q.length > 2 && searchableText.includes(q)) return 1;
+
+  if (terms.length === 0) return 0;
+  const matchCount = terms.reduce((acc, term) => acc + (searchableText.includes(term) ? 1 : 0), 0);
+  return matchCount / terms.length;
 };
 
 const Index = () => {
   const { toast } = useToast();
   const { data: cases, isLoading } = useLegalCases(1);
   const { data: stats } = useCaseStats();
-  const [searchResults, setSearchResults] = useState<Array<typeof DEMO_CASES[0] & { relevanceScore: number }>>([]);
+  const caseSearch = useCaseSearch();
+
+  const [searchResults, setSearchResults] = useState<SearchCardResult[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Use real data if available, otherwise use demo data
   const hasRealData = cases && cases.length > 0;
-  
-  const featuredCase = hasRealData ? {
-    title: cases[0].name,
-    court: cases[0].court,
-    date: cases[0].decision_date ? new Date(cases[0].decision_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'Unknown',
-    summary: cases[0].preview?.[0] || cases[0].summary || "No summary available for this case.",
-    tags: [cases[0].jurisdiction || "Federal", cases[0].court.split(" ")[0] || "Court", "Legal"],
-    citations: 127,
-    conflicts: 3,
-  } : DEMO_CASES[0];
 
-  const metrics = hasRealData ? {
-    totalCases: stats?.totalCases || 1,
-    contradictions: stats?.contradictions || 0,
-    graphNodes: stats?.graphNodes || 0,
-    similarityScore: stats?.similarityScore || 0,
-  } : DEMO_METRICS;
+  const featuredCase = hasRealData
+    ? {
+        title: cases[0].name,
+        court: cases[0].court,
+        date: cases[0].decision_date
+          ? new Date(cases[0].decision_date).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })
+          : "Unknown",
+        summary: cases[0].preview?.[0] || cases[0].summary || "No summary available for this case.",
+        tags: [cases[0].jurisdiction || "Federal", cases[0].court.split(" ")[0] || "Court", "Legal"],
+        citations: 127,
+        conflicts: 3,
+      }
+    : DEMO_CASES[0];
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    
-    // Calculate relevance scores and sort
-    const results = DEMO_CASES
-      .map(c => ({ ...c, relevanceScore: calculateRelevance(query, c) }))
+  const metrics = hasRealData
+    ? {
+        totalCases: stats?.totalCases || 1,
+        contradictions: stats?.contradictions || 0,
+        graphNodes: stats?.graphNodes || 0,
+        similarityScore: stats?.similarityScore || 0,
+      }
+    : DEMO_METRICS;
+
+  const handleSearch = async (query: string) => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      toast({
+        title: "Enter a search",
+        description: "Type at least 2 characters to search cases.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSearchQuery(trimmed);
+
+    // Prefer real database search; fallback to demo data only if there's no dataset yet.
+    if (hasRealData) {
+      try {
+        const rows = await caseSearch.mutateAsync(trimmed);
+
+        const results = rows
+          .map((row) => {
+            const dateSort = row.decision_date ? new Date(row.decision_date).getTime() : 0;
+            const mapped = {
+              id: row.id,
+              title: row.name,
+              court: row.court,
+              date: row.decision_date
+                ? new Date(row.decision_date).toLocaleDateString("en-US", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })
+                : "Unknown",
+              summary: row.summary ?? "",
+              tags: [row.jurisdiction || "Unknown", row.court.split(" ")[0] || "Court"],
+              citations: 0,
+              conflicts: 0,
+              relevanceScore: 0,
+              dateSort,
+            };
+
+            mapped.relevanceScore = scoreCase(trimmed, {
+              title: mapped.title,
+              summary: mapped.summary,
+              tags: mapped.tags,
+            });
+
+            return mapped;
+          })
+          .filter((r) => r.relevanceScore > 0)
+          .sort((a, b) => {
+            if (b.relevanceScore !== a.relevanceScore) return b.relevanceScore - a.relevanceScore;
+            return b.dateSort - a.dateSort;
+          })
+          .slice(0, 25)
+          .map(({ dateSort, ...rest }) => rest);
+
+        setSearchResults(results);
+
+        toast({
+          title: "Search complete",
+          description:
+            results.length > 0
+              ? `Found ${results.length} cases matching "${trimmed}"`
+              : `No matching cases found for "${trimmed}"`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Search failed",
+          description: error?.message || "Could not run search.",
+          variant: "destructive",
+        });
+      }
+
+      return;
+    }
+
+    // Demo fallback (deterministic)
+    const demoResults = DEMO_CASES
+      .map((c) => ({
+        ...c,
+        relevanceScore: scoreCase(trimmed, { title: c.title, summary: c.summary, tags: c.tags }),
+      }))
+      .filter((r) => r.relevanceScore > 0)
       .sort((a, b) => b.relevanceScore - a.relevanceScore);
-    
-    setSearchResults(results);
-    
+
+    setSearchResults(demoResults);
+
     toast({
-      title: "Semantic Search Complete",
-      description: `Found ${results.length} relevant cases for "${query}"`,
+      title: "Search complete",
+      description: `Found ${demoResults.length} matching cases for "${trimmed}"`,
     });
   };
 

@@ -77,7 +77,7 @@ export const SearchResults = ({ results, query, onClose }: SearchResultsProps) =
               Search Results for "{query}"
             </h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Found {results.length} semantically similar cases
+              Found {results.length} matching cases
             </p>
           </div>
           <button 

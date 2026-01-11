@@ -4,15 +4,15 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
 interface SearchSectionProps {
-  onSearch: (query: string) => void;
+  onSearch: (query: string) => void | Promise<void>;
 }
 
 export const SearchSection = ({ onSearch }: SearchSectionProps) => {
-  const [query, setQuery] = useState("Smith v. Jones");
+  const [query, setQuery] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSearch(query);
+    void onSearch(query);
   };
 
   return (

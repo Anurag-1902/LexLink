@@ -113,48 +113,91 @@ export const useAutoCreateRelationships = () => {
       const { newCaseId, relationships } = params;
       const results = { citations: 0, similarities: 0, contradictions: 0 };
 
+      const isDuplicate = (e: any) =>
+        e?.code === "23505" ||
+        String(e?.message || "").toLowerCase().includes("duplicate key") ||
+        String(e?.details || "").toLowerCase().includes("already exists");
+
+      const isPermission = (e: any) => {
+        const msg = String(e?.message || "").toLowerCase();
+        const details = String(e?.details || "").toLowerCase();
+        return (
+          e?.code === "42501" ||
+          msg.includes("row-level security") ||
+          msg.includes("permission denied") ||
+          details.includes("row-level security")
+        );
+      };
+
       // Create citations
-      for (const citation of relationships.citations) {
-        try {
-          await supabase.from("case_citations").insert({
-            citing_case_id: newCaseId,
-            cited_case_id: citation.targetCaseId,
-            citation_text: citation.reason,
-          });
-          results.citations++;
-        } catch (err) {
-          console.error("Failed to create citation:", err);
+      for (const citation of relationships.citations || []) {
+        const { error } = await supabase.from("case_citations").insert({
+          citing_case_id: newCaseId,
+          cited_case_id: citation.targetCaseId,
+          citation_text: citation.reason,
+        });
+
+        if (error) {
+          if (isDuplicate(error)) continue;
+          if (isPermission(error)) {
+            throw Object.assign(new Error("You must be signed in to save detected relationships."), {
+              status: 403,
+              code: error.code,
+            });
+          }
+          console.error("Failed to create citation:", error);
+          continue;
         }
+
+        results.citations++;
       }
 
       // Create similarities
-      for (const similarity of relationships.similarities) {
-        try {
-          await supabase.from("case_similarities").insert({
-            case_a_id: newCaseId,
-            case_b_id: similarity.targetCaseId,
-            similarity_score: similarity.score,
-          });
-          results.similarities++;
-        } catch (err) {
-          console.error("Failed to create similarity:", err);
+      for (const similarity of relationships.similarities || []) {
+        const { error } = await supabase.from("case_similarities").insert({
+          case_a_id: newCaseId,
+          case_b_id: similarity.targetCaseId,
+          similarity_score: similarity.score,
+        });
+
+        if (error) {
+          if (isDuplicate(error)) continue;
+          if (isPermission(error)) {
+            throw Object.assign(new Error("You must be signed in to save detected relationships."), {
+              status: 403,
+              code: error.code,
+            });
+          }
+          console.error("Failed to create similarity:", error);
+          continue;
         }
+
+        results.similarities++;
       }
 
       // Create contradictions
-      for (const contradiction of relationships.contradictions) {
-        try {
-          await supabase.from("case_contradictions").insert({
-            case_a_id: newCaseId,
-            case_b_id: contradiction.targetCaseId,
-            conflict_type: contradiction.conflictType,
-            confidence_score: contradiction.confidence,
-            description: contradiction.description,
-          });
-          results.contradictions++;
-        } catch (err) {
-          console.error("Failed to create contradiction:", err);
+      for (const contradiction of relationships.contradictions || []) {
+        const { error } = await supabase.from("case_contradictions").insert({
+          case_a_id: newCaseId,
+          case_b_id: contradiction.targetCaseId,
+          conflict_type: contradiction.conflictType,
+          confidence_score: contradiction.confidence,
+          description: contradiction.description,
+        });
+
+        if (error) {
+          if (isDuplicate(error)) continue;
+          if (isPermission(error)) {
+            throw Object.assign(new Error("You must be signed in to save detected relationships."), {
+              status: 403,
+              code: error.code,
+            });
+          }
+          console.error("Failed to create contradiction:", error);
+          continue;
         }
+
+        results.contradictions++;
       }
 
       return results;
@@ -171,14 +214,22 @@ export const useAutoCreateRelationships = () => {
           title: "AI Relationships Created",
           description: `Added ${results.citations} citations, ${results.similarities} similarities, ${results.contradictions} contradictions`,
         });
+      } else {
+        toast({
+          title: "No new relationships",
+          description: "No new relationships were added (they may already exist).",
+        });
       }
     },
-    onError: (error: Error) => {
+    onError: (error: any, variables?: any) => {
+      if ((variables as any)?.silent) return;
+
       toast({
         title: "Failed to create relationships",
-        description: error.message,
+        description: error?.message || "Unknown error",
         variant: "destructive",
       });
     },
   });
 };
+

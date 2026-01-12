@@ -246,7 +246,19 @@ export const KnowledgeGraph = () => {
 
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    const casesToProcess = allCases.slice(0, 25); // 20-30 is ideal; we cap at 25
+    // Prefer cases with summaries (faster + higher accuracy + fewer wasted calls)
+    const casesWithSummaries = allCases.filter((c) => String(c.summary || "").trim().length > 20);
+    const casesToProcess = casesWithSummaries.slice(0, 25);
+
+    if (casesToProcess.length < 2) {
+      toast({
+        title: "Not enough summarized cases",
+        description: "Generate summaries for more cases first, then run AI Detect All.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsRunningBulkAI(true);
     setBulkAIProgress({ current: 0, total: casesToProcess.length });
 
@@ -255,12 +267,18 @@ export const KnowledgeGraph = () => {
       | { title: string; description: string; variant?: "default" | "destructive" }
       | null = null;
 
-    const detectWithRetry = async (caseItem: any, maxRetries = 6) => {
+    // Dynamic pacing to avoid 429s (starts conservative, adapts automatically)
+    const MIN_DELAY_MS = 1200;
+    const MAX_DELAY_MS = 7000;
+    let delayMs = 2800;
+    let cooldowns = 0;
+
+    const detectWithRetry = async (caseItem: any, maxRetries = 8) => {
       let lastError: any;
 
       for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
-          return await detectRelationshipsMutation.mutateAsync({
+          const res = await detectRelationshipsMutation.mutateAsync({
             newCaseId: caseItem.id,
             newCaseName: caseItem.name,
             newCaseSummary: caseItem.summary || undefined,
@@ -268,12 +286,18 @@ export const KnowledgeGraph = () => {
             newCaseJurisdiction: caseItem.jurisdiction || undefined,
             silent: true,
           });
+
+          // Gradually speed up when things are stable
+          delayMs = Math.max(MIN_DELAY_MS, Math.floor(delayMs * 0.95));
+          return res;
         } catch (err: any) {
           lastError = err;
           const status = err?.status;
 
-          // Backoff on rate limits
-          if (status === 429 && attempt < maxRetries - 1) {
+          if (status === 429) {
+            // Slow down aggressively on rate limits
+            delayMs = Math.min(MAX_DELAY_MS, Math.floor(delayMs * 1.6));
+
             const backoffMs = Math.min(20000, 2500 * Math.pow(2, attempt));
             await sleep(backoffMs);
             continue;
@@ -287,11 +311,17 @@ export const KnowledgeGraph = () => {
     };
 
     try {
-      toast({ title: "AI Detect All", description: `Analyzing ${casesToProcess.length} cases...` });
+      toast({
+        title: "AI Detect All",
+        description: `Analyzing ${casesToProcess.length} cases (summarized only)...`,
+      });
 
       for (let i = 0; i < casesToProcess.length; i++) {
         const caseItem = casesToProcess[i];
         setBulkAIProgress({ current: i + 1, total: casesToProcess.length });
+
+        // Add jitter to prevent burst patterns
+        await sleep(delayMs + Math.floor(Math.random() * 250));
 
         try {
           const detection = await detectWithRetry(caseItem);
@@ -326,10 +356,22 @@ export const KnowledgeGraph = () => {
             break;
           }
 
+          // Seamless handling for rate limits: cool down and retry the same case.
           if (status === 429) {
+            cooldowns++;
+            if (cooldowns <= 3) {
+              toast({
+                title: "Cooling down",
+                description: "Pausing briefly to avoid rate limits, then resuming…",
+              });
+              await sleep(45000);
+              i--; // retry same case
+              continue;
+            }
+
             aborted = {
-              title: "Temporarily rate-limited",
-              description: "AI is throttling requests. Please wait ~1 minute and try again.",
+              title: "Rate-limited",
+              description: "Still rate-limited after multiple cooldowns. Please try again in a few minutes.",
               variant: "destructive",
             };
             break;
@@ -346,9 +388,6 @@ export const KnowledgeGraph = () => {
 
           console.error(`Failed to analyze case ${caseItem.name}:`, caseError);
         }
-
-        // Small delay between calls to avoid spiky bursts
-        await sleep(700);
       }
 
       if (aborted) {

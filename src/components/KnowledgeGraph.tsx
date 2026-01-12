@@ -233,7 +233,11 @@ export const KnowledgeGraph = () => {
   // Bulk AI relationship detection (fast + reliable throttling)
   const handleBulkAIDetection = async () => {
     if (!allCases || allCases.length < 2) {
-      toast({ title: "Not enough cases", description: "Need at least 2 cases to detect relationships", variant: "destructive" });
+      toast({
+        title: "Not enough cases",
+        description: "Need at least 2 cases to detect relationships",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -244,6 +248,9 @@ export const KnowledgeGraph = () => {
     setBulkAIProgress({ current: 0, total: casesToProcess.length });
 
     let totalCreated = { citations: 0, similarities: 0, contradictions: 0 };
+    let aborted:
+      | { title: string; description: string; variant?: "default" | "destructive" }
+      | null = null;
 
     const detectWithRetry = async (caseItem: any, maxRetries = 6) => {
       let lastError: any;
@@ -288,7 +295,10 @@ export const KnowledgeGraph = () => {
 
           if (detection?.relationships) {
             const { citations, similarities, contradictions } = detection.relationships;
-            const total = (citations?.length || 0) + (similarities?.length || 0) + (contradictions?.length || 0);
+            const total =
+              (citations?.length || 0) +
+              (similarities?.length || 0) +
+              (contradictions?.length || 0);
 
             if (total > 0) {
               const created = await autoCreateRelationshipsMutation.mutateAsync({
@@ -305,36 +315,62 @@ export const KnowledgeGraph = () => {
           const status = caseError?.status;
 
           if (status === 402) {
-            toast({ title: "AI credits needed", description: "Please add credits to continue.", variant: "destructive" });
+            aborted = {
+              title: "AI credits needed",
+              description: "Please add credits to continue.",
+              variant: "destructive",
+            };
             break;
           }
 
           if (status === 429) {
-            toast({
+            aborted = {
               title: "Temporarily rate-limited",
-              description: "AI is throttling requests. Please wait ~1 minute and click AI Detect All again.",
+              description: "AI is throttling requests. Please wait ~1 minute and try again.",
               variant: "destructive",
-            });
+            };
+            break;
+          }
+
+          if (status === 401 || status === 403) {
+            aborted = {
+              title: "Sign in required",
+              description: "Please sign in to save detected relationships to the graph.",
+              variant: "destructive",
+            };
             break;
           }
 
           console.error(`Failed to analyze case ${caseItem.name}:`, caseError);
         }
 
-        // delay between calls to stay under rate limits
-        await sleep(1200);
+        // Small delay between calls to avoid spiky bursts
+        await sleep(700);
+      }
+
+      if (aborted) {
+        toast(aborted);
+        return;
       }
 
       const grandTotal = totalCreated.citations + totalCreated.similarities + totalCreated.contradictions;
+
       toast({
         title: "AI Detect All complete",
-        description: `Created ${grandTotal} relationships (${totalCreated.citations} citations, ${totalCreated.similarities} similarities, ${totalCreated.contradictions} contradictions).`,
+        description:
+          grandTotal > 0
+            ? `Created ${grandTotal} relationships (${totalCreated.citations} citations, ${totalCreated.similarities} similarities, ${totalCreated.contradictions} contradictions).`
+            : "No new relationships were created (either none were detected or they already exist).",
       });
 
       refetch();
     } catch (error) {
       console.error("Bulk AI detection failed:", error);
-      toast({ title: "Analysis failed", description: "Could not complete bulk analysis.", variant: "destructive" });
+      toast({
+        title: "Analysis failed",
+        description: "Could not complete bulk analysis.",
+        variant: "destructive",
+      });
     } finally {
       setIsRunningBulkAI(false);
       setBulkAIProgress({ current: 0, total: 0 });

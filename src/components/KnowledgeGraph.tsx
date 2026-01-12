@@ -8,9 +8,11 @@ import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { useKnowledgeGraph, GraphNode, GraphEdge } from "@/hooks/useKnowledgeGraph";
+import { supabase } from "@/integrations/supabase/client";
 import { useAddCase, useAddCitation, useAddContradiction, useAddSimilarity, useSummarizeCase, useLegalCases } from "@/hooks/useLegalCases";
 import { useDetectRelationships, useAutoCreateRelationships } from "@/hooks/useDetectRelationships";
-import { Loader2, ZoomIn, ZoomOut, Maximize2, Info, BookOpen, Scale, AlertTriangle, Link2, Plus, X, FileText, GitBranch, Users, ArrowRight, Sparkles, Brain } from "lucide-react";
+import { Loader2, ZoomIn, ZoomOut, Maximize2, Info, BookOpen, Scale, AlertTriangle, Link2, Plus, X, FileText, GitBranch, Users, ArrowRight, Sparkles, Brain, RotateCcw } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "./ui/label";
 import { GraphFiltersComponent, GraphFilters } from "./GraphFilters";
@@ -78,6 +80,7 @@ export const KnowledgeGraph = () => {
   const [isRunningBulkAI, setIsRunningBulkAI] = useState(false);
   const [bulkAIProgress, setBulkAIProgress] = useState({ current: 0, total: 0 });
   const [isDetectingSingleCase, setIsDetectingSingleCase] = useState(false);
+  const [isResettingGraph, setIsResettingGraph] = useState(false);
   const [relationshipType, setRelationshipType] = useState<'citation' | 'contradiction' | 'similarity'>('citation');
   
   // Filters state
@@ -426,6 +429,39 @@ export const KnowledgeGraph = () => {
     }
   };
 
+  // Reset graph - clear all relationships
+  const handleResetGraph = async () => {
+    setIsResettingGraph(true);
+    try {
+      // Delete all citations
+      const { error: citError } = await supabase.from("case_citations").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (citError) console.error("Failed to delete citations:", citError);
+
+      // Delete all similarities
+      const { error: simError } = await supabase.from("case_similarities").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (simError) console.error("Failed to delete similarities:", simError);
+
+      // Delete all contradictions
+      const { error: conError } = await supabase.from("case_contradictions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (conError) console.error("Failed to delete contradictions:", conError);
+
+      toast({
+        title: "Graph reset",
+        description: "All relationships have been cleared. Cases remain intact.",
+      });
+      refetch();
+    } catch (error) {
+      console.error("Reset graph failed:", error);
+      toast({
+        title: "Reset failed",
+        description: "Could not clear relationships.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsResettingGraph(false);
+    }
+  };
+
   const handleAddRelationship = async () => {
     if (!newRelationship.sourceId || !newRelationship.targetId) {
       toast({ title: "Error", description: "Please select both cases", variant: "destructive" });
@@ -703,6 +739,39 @@ export const KnowledgeGraph = () => {
                 </>
               )}
             </Button>
+
+            {/* Reset Graph Button */}
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 text-destructive hover:text-destructive"
+                  disabled={isResettingGraph}
+                >
+                  {isResettingGraph ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-4 w-4" />
+                  )}
+                  <span>Reset Graph</span>
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reset Knowledge Graph?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will delete all citations, similarities, and contradictions. Cases will remain intact. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleResetGraph} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    Reset Graph
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             
             {/* Add Relationship Dialog */}
             <Dialog open={isRelationshipDialogOpen} onOpenChange={setIsRelationshipDialogOpen}>

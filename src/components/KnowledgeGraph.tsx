@@ -81,6 +81,8 @@ export const KnowledgeGraph = () => {
   const [bulkAIProgress, setBulkAIProgress] = useState({ current: 0, total: 0 });
   const [isDetectingSingleCase, setIsDetectingSingleCase] = useState(false);
   const [isResettingGraph, setIsResettingGraph] = useState(false);
+  const [isDetectingContradictions, setIsDetectingContradictions] = useState(false);
+  const [contradictionProgress, setContradictionProgress] = useState({ current: 0, total: 0 });
   const [relationshipType, setRelationshipType] = useState<'citation' | 'contradiction' | 'similarity'>('citation');
   
   // Filters state
@@ -416,6 +418,142 @@ export const KnowledgeGraph = () => {
     } finally {
       setIsRunningBulkAI(false);
       setBulkAIProgress({ current: 0, total: 0 });
+    }
+  };
+
+  // Dedicated contradiction detection
+  const handleContradictionDetection = async () => {
+    if (!allCases || allCases.length < 2) {
+      toast({
+        title: "Not enough cases",
+        description: "Need at least 2 cases to detect contradictions",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const casesWithSummaries = allCases.filter((c) => String(c.summary || "").trim().length > 20);
+    const casesToProcess = casesWithSummaries.slice(0, 25);
+
+    if (casesToProcess.length < 2) {
+      toast({
+        title: "Not enough summarized cases",
+        description: "Generate summaries for more cases first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsDetectingContradictions(true);
+    setContradictionProgress({ current: 0, total: casesToProcess.length });
+
+    let totalContradictions = 0;
+    const MIN_DELAY_MS = 1200;
+    const MAX_DELAY_MS = 7000;
+    let delayMs = 2800;
+    let cooldowns = 0;
+
+    const detectWithRetry = async (caseItem: any, maxRetries = 8) => {
+      let lastError: any;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const res = await detectRelationshipsMutation.mutateAsync({
+            newCaseId: caseItem.id,
+            newCaseName: caseItem.name,
+            newCaseSummary: caseItem.summary || undefined,
+            newCaseCourt: caseItem.court,
+            newCaseJurisdiction: caseItem.jurisdiction || undefined,
+            silent: true,
+          });
+          delayMs = Math.max(MIN_DELAY_MS, Math.floor(delayMs * 0.95));
+          return res;
+        } catch (err: any) {
+          lastError = err;
+          if (err?.status === 429) {
+            delayMs = Math.min(MAX_DELAY_MS, Math.floor(delayMs * 1.6));
+            const backoffMs = Math.min(20000, 2500 * Math.pow(2, attempt));
+            await sleep(backoffMs);
+            continue;
+          }
+          throw err;
+        }
+      }
+      throw lastError;
+    };
+
+    try {
+      toast({
+        title: "Detecting Contradictions",
+        description: `Scanning ${casesToProcess.length} cases for conflicts...`,
+      });
+
+      for (let i = 0; i < casesToProcess.length; i++) {
+        const caseItem = casesToProcess[i];
+        setContradictionProgress({ current: i + 1, total: casesToProcess.length });
+        await sleep(delayMs + Math.floor(Math.random() * 250));
+
+        try {
+          const detection = await detectWithRetry(caseItem);
+
+          if (detection?.relationships?.contradictions?.length > 0) {
+            // Only save contradictions
+            for (const contradiction of detection.relationships.contradictions) {
+              try {
+                await supabase.from('case_contradictions').insert({
+                  case_a_id: caseItem.id,
+                  case_b_id: contradiction.targetCaseId,
+                  conflict_type: contradiction.conflictType || 'Unknown',
+                  confidence_score: contradiction.confidence || 0.7,
+                  description: contradiction.description,
+                });
+                totalContradictions++;
+              } catch (insertErr: any) {
+                if (!insertErr?.message?.includes('duplicate')) {
+                  console.error("Insert error:", insertErr);
+                }
+              }
+            }
+          }
+        } catch (caseError: any) {
+          const status = caseError?.status;
+
+          if (status === 402) {
+            toast({ title: "AI credits needed", description: "Please add credits to continue.", variant: "destructive" });
+            break;
+          }
+
+          if (status === 429) {
+            cooldowns++;
+            if (cooldowns <= 3) {
+              toast({ title: "Cooling down", description: "Pausing briefly to avoid rate limits..." });
+              await sleep(45000);
+              i--;
+              continue;
+            }
+            toast({ title: "Rate-limited", description: "Please try again in a few minutes.", variant: "destructive" });
+            break;
+          }
+
+          console.error(`Failed to analyze case ${caseItem.name}:`, caseError);
+        }
+      }
+
+      toast({
+        title: "Contradiction Detection Complete",
+        description: totalContradictions > 0
+          ? `Found and saved ${totalContradictions} contradictions.`
+          : "No new contradictions detected.",
+      });
+
+      refetch();
+    } catch (error) {
+      console.error("Contradiction detection failed:", error);
+      toast({ title: "Detection failed", description: "Could not complete contradiction analysis.", variant: "destructive" });
+    } finally {
+      setIsDetectingContradictions(false);
+      setContradictionProgress({ current: 0, total: 0 });
     }
   };
 
@@ -764,7 +902,7 @@ export const KnowledgeGraph = () => {
               variant="secondary" 
               className="gap-1 bg-gradient-to-r from-primary/20 to-primary/10 hover:from-primary/30 hover:to-primary/20"
               onClick={handleBulkAIDetection}
-              disabled={isRunningBulkAI || !allCases || allCases.length < 2}
+              disabled={isRunningBulkAI || isDetectingContradictions || !allCases || allCases.length < 2}
             >
               {isRunningBulkAI ? (
                 <>
@@ -775,6 +913,27 @@ export const KnowledgeGraph = () => {
                 <>
                   <Sparkles className="h-4 w-4" />
                   <span>AI Detect All</span>
+                </>
+              )}
+            </Button>
+
+            {/* Dedicated Contradiction Detection Button */}
+            <Button 
+              size="sm" 
+              variant="outline" 
+              className="gap-1 border-pink-500/50 text-pink-600 hover:bg-pink-500/10 hover:text-pink-700"
+              onClick={handleContradictionDetection}
+              disabled={isDetectingContradictions || isRunningBulkAI || !allCases || allCases.length < 2}
+            >
+              {isDetectingContradictions ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Scanning {contradictionProgress.current}/{contradictionProgress.total}</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>Detect Contradictions</span>
                 </>
               )}
             </Button>

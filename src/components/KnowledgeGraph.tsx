@@ -64,6 +64,9 @@ export const KnowledgeGraph = () => {
   const detectRelationshipsMutation = useDetectRelationships();
   const autoCreateRelationshipsMutation = useAutoCreateRelationships();
   const { data: allCases } = useLegalCases(25); // For dropdown & bulk AI
+
+  // Keep bulk AI runs small to avoid rate limits / errors
+  const BULK_AI_CASE_LIMIT = 10;
   
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -250,7 +253,7 @@ export const KnowledgeGraph = () => {
 
     // Prefer cases with summaries (faster + higher accuracy + fewer wasted calls)
     const casesWithSummaries = allCases.filter((c) => String(c.summary || "").trim().length > 20);
-    const casesToProcess = casesWithSummaries.slice(0, 25);
+    const casesToProcess = casesWithSummaries.slice(0, BULK_AI_CASE_LIMIT);
 
     if (casesToProcess.length < 2) {
       toast({
@@ -270,9 +273,9 @@ export const KnowledgeGraph = () => {
       | null = null;
 
     // Dynamic pacing to avoid 429s (starts conservative, adapts automatically)
-    const MIN_DELAY_MS = 1200;
-    const MAX_DELAY_MS = 7000;
-    let delayMs = 2800;
+    const MIN_DELAY_MS = 2500;
+    const MAX_DELAY_MS = 9000;
+    let delayMs = 4500;
     let cooldowns = 0;
 
     const detectWithRetry = async (caseItem: any, maxRetries = 8) => {
@@ -435,7 +438,7 @@ export const KnowledgeGraph = () => {
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const casesWithSummaries = allCases.filter((c) => String(c.summary || "").trim().length > 20);
-    const casesToProcess = casesWithSummaries.slice(0, 25);
+    const casesToProcess = casesWithSummaries.slice(0, BULK_AI_CASE_LIMIT);
 
     if (casesToProcess.length < 2) {
       toast({
@@ -450,9 +453,9 @@ export const KnowledgeGraph = () => {
     setContradictionProgress({ current: 0, total: casesToProcess.length });
 
     let totalContradictions = 0;
-    const MIN_DELAY_MS = 1200;
-    const MAX_DELAY_MS = 7000;
-    let delayMs = 2800;
+    const MIN_DELAY_MS = 2500;
+    const MAX_DELAY_MS = 9000;
+    let delayMs = 4500;
     let cooldowns = 0;
 
     const detectWithRetry = async (caseItem: any, maxRetries = 8) => {

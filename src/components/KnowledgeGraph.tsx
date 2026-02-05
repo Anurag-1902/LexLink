@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -54,6 +55,7 @@ const JURISDICTIONS = ["Federal", "California", "New York", "Texas", "Florida", 
 
 export const KnowledgeGraph = () => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [nodeLimit, setNodeLimit] = useState(100);
   const { data, isLoading, error, refetch } = useKnowledgeGraph(nodeLimit);
   const addCaseMutation = useAddCase();
@@ -410,7 +412,10 @@ export const KnowledgeGraph = () => {
             : "No new relationships were created (either none were detected or they already exist).",
       });
 
-      refetch();
+      // Force refresh the graph data
+      await queryClient.invalidateQueries({ queryKey: ['knowledge-graph'] });
+      await queryClient.invalidateQueries({ queryKey: ['case-stats'] });
+      await refetch();
     } catch (error) {
       console.error("Bulk AI detection failed:", error);
       toast({
@@ -423,7 +428,7 @@ export const KnowledgeGraph = () => {
       setBulkAIProgress({ current: 0, total: 0 });
     }
   };
-
+  
   // Dedicated contradiction detection
   const handleContradictionDetection = async () => {
     if (!allCases || allCases.length < 2) {
@@ -550,7 +555,10 @@ export const KnowledgeGraph = () => {
           : "No new contradictions detected.",
       });
 
-      refetch();
+      // Force refresh the graph data
+      await queryClient.invalidateQueries({ queryKey: ['knowledge-graph'] });
+      await queryClient.invalidateQueries({ queryKey: ['case-stats'] });
+      await refetch();
     } catch (error) {
       console.error("Contradiction detection failed:", error);
       toast({ title: "Detection failed", description: "Could not complete contradiction analysis.", variant: "destructive" });
@@ -596,7 +604,10 @@ export const KnowledgeGraph = () => {
             description: `Created ${grandTotal} relationships: ${results.citations} citations, ${results.similarities} similarities, ${results.contradictions} contradictions`
           });
           
-          refetch();
+          // Force refresh the graph data
+          await queryClient.invalidateQueries({ queryKey: ['knowledge-graph'] });
+          await queryClient.invalidateQueries({ queryKey: ['case-stats'] });
+          await refetch();
         } else {
           toast({ title: "No relationships found", description: "AI did not detect any new relationships for this case" });
         }
@@ -629,7 +640,10 @@ export const KnowledgeGraph = () => {
         title: "Graph reset",
         description: "All relationships have been cleared. Cases remain intact.",
       });
-      refetch();
+      // Force refresh the graph data
+      await queryClient.invalidateQueries({ queryKey: ['knowledge-graph'] });
+      await queryClient.invalidateQueries({ queryKey: ['case-stats'] });
+      await refetch();
     } catch (error) {
       console.error("Reset graph failed:", error);
       toast({

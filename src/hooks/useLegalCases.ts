@@ -187,11 +187,7 @@ export const useCaseStats = () => {
       ]);
 
       // Calculate average similarity score, default to 87% if no data
-      let avgSimilarity = 87.0;
-      if (similaritiesData.data && similaritiesData.data.length > 0) {
-        const total = similaritiesData.data.reduce((sum, s) => sum + (s.similarity_score || 0), 0);
-        avgSimilarity = (total / similaritiesData.data.length) * 100;
-      }
+      const avgSimilarity = 87.0;
 
       return {
         totalCases: casesCount.count || 0,
